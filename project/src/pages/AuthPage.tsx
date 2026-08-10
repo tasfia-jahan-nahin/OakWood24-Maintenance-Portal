@@ -3,6 +3,7 @@ import { Eye, EyeOff, HeartPulse, Lock, Mail } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { supabase } from '@/lib/supabase';
 
 export function AuthPage() {
   const { signIn, signUp } = useAuth();
@@ -23,11 +24,29 @@ export function AuthPage() {
 
     if (mode === 'signin') {
       const { error: err } = await signIn(email, password);
-      if (err) setError(err);
+      if (err) {
+        setError(err);
+      } else {
+        // Record login event for Admin tracking
+        try {
+          const { data: userData } = await supabase.auth.getUser();
+          if (userData?.user) {
+            await supabase.from('auth_activity_logs').insert({
+              user_id: userData.user.id,
+              email: userData.user.email,
+              action: 'LOGIN',
+              created_at: new Date().toISOString(),
+            });
+          }
+        } catch (logErr) {
+          console.error('Failed to insert login history record:', logErr);
+        }
+      }
     } else {
       const { error: err } = await signUp(email, password);
-      if (err) setError(err);
-      else {
+      if (err) {
+        setError(err);
+      } else {
         setSuccess('Account created! You can now sign in.');
         setMode('signin');
       }
