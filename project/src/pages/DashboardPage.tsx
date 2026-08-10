@@ -29,13 +29,13 @@ import {
   type DashboardStats,
 } from '@/lib/api';
 import { type Candidate, type CandidateWithExpiry, type ReminderSettings } from '@/types';
-import { supabase } from '@/lib/supabase'; // Imported supabase client
+import { supabase } from '@/lib/supabase';
 
 export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [settings, setSettings] = useState<ReminderSettings | null>(null);
-  const [loginCount, setLoginCount] = useState<number>(0); // Added state for Auth Logins
+  const [loginCount, setLoginCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [subHeader, setSubHeader] = useState(getShiftSubHeader());
 
@@ -47,18 +47,24 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
 
   const load = useCallback(async () => {
     try {
-      // Fetch Dashboard Stats, Candidates, Reminder Settings, and Auth Activity Logs in parallel
+      // Fetch Dashboard Stats, Candidates, Reminder Settings, and Auth Activity Logs with explicit count
       const [s, cands, settingsData, authLogsRes] = await Promise.all([
         fetchDashboardStats(),
         fetchCandidates(),
         fetchReminderSettings(),
-        supabase.from('auth_activity_logs').select('id', { count: 'exact', head: true }),
+        supabase
+          .from('auth_activity_logs')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+          .limit(10),
       ]);
       
       setStats(s);
       setCandidates(cands);
       setSettings(settingsData);
-      setLoginCount(authLogsRes.count ?? 0);
+      
+      // Use exact count if returned, otherwise fallback to array length
+      setLoginCount(authLogsRes.count ?? (authLogsRes.data?.length ?? 0));
     } catch (err) {
       console.error('Dashboard load error:', err);
     } finally {
@@ -68,6 +74,22 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
 
   useEffect(() => {
     load();
+
+    // Subscribe to real-time database changes for auth_activity_logs
+    const channel = supabase
+      .channel('public:auth_activity_logs')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'auth_activity_logs' },
+        () => {
+          load();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [load]);
 
   const enriched = useMemo(() => enrichCandidates(candidates, settings), [candidates, settings]);
