@@ -26,21 +26,6 @@ export function AuthPage() {
     const { error: err } = await signIn(email, password);
     if (err) {
       setError(err);
-    } else {
-      // Record login event for Admin tracking
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          await supabase.from('auth_activity_logs').insert({
-            user_id: session.user.id,
-            email: session.user.email,
-            action: 'LOGIN',
-            created_at: new Date().toISOString(),
-          });
-        }
-      } catch (logErr) {
-        console.error('Failed to insert login history record:', logErr);
-      }
     }
   } else {
     const { error: err } = await signUp(email, password);

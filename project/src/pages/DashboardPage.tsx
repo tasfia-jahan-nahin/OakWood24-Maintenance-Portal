@@ -62,9 +62,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
       setStats(s);
       setCandidates(cands);
       setSettings(settingsData);
+
+      if (authLogsRes.error) {
+        console.error('Failed to load auth activity logs:', authLogsRes.error);
+      }
       
-      // Use exact count if returned, otherwise fallback to array length
-      setLoginCount(authLogsRes.count ?? (authLogsRes.data?.length ?? 0));
+      setLoginCount(authLogsRes.count ?? authLogsRes.data?.length ?? 0);
     } catch (err) {
       console.error('Dashboard load error:', err);
     } finally {
