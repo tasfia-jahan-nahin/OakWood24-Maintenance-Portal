@@ -98,9 +98,9 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
 
       let matchesTab = true;
       switch (tab) {
-        case 'active': matchesTab = c.status === 'active' && !c.goodbye_email_sent && c.status !== 'archived'; break;
-        case 'inactive': matchesTab = c.status === 'inactive' && !c.goodbye_email_sent && c.status !== 'archived'; break;
-        case 'no_zoho': matchesTab = c.status === 'no_zoho_remark' && c.status !== 'archived'; break;
+        case 'active': matchesTab = c.status === 'active' && !c.goodbye_email_sent; break;
+        case 'inactive': matchesTab = c.status === 'inactive' && !c.goodbye_email_sent; break;
+        case 'no_zoho': matchesTab = c.status === 'no_zoho_remark'; break;
         case 'goodbye': matchesTab = c.goodbye_email_sent; break;
         case 'expiring': matchesTab = c.isExpiringSoon && !c.goodbye_email_sent && c.status !== 'archived'; break;
         case 'do_not_book': matchesTab = c.isDoNotBook && !c.goodbye_email_sent && c.status !== 'archived'; break;
@@ -113,9 +113,9 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
 
   const tabs: { key: FilterTab; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: enriched.length },
-    { key: 'active', label: 'Active', count: enriched.filter((c) => c.status === 'active' && !c.goodbye_email_sent && c.status !== 'archived').length },
-    { key: 'inactive', label: 'Inactive', count: enriched.filter((c) => c.status === 'inactive' && !c.goodbye_email_sent && c.status !== 'archived').length },
-    { key: 'no_zoho', label: 'No Zoho', count: enriched.filter((c) => c.status === 'no_zoho_remark' && c.status !== 'archived').length },
+    { key: 'active', label: 'Active', count: enriched.filter((c) => c.status === 'active' && !c.goodbye_email_sent).length },
+    { key: 'inactive', label: 'Inactive', count: enriched.filter((c) => c.status === 'inactive' && !c.goodbye_email_sent).length },
+    { key: 'no_zoho', label: 'No Zoho', count: enriched.filter((c) => c.status === 'no_zoho_remark').length },
     { key: 'goodbye', label: 'Goodbye Email', count: enriched.filter((c) => c.goodbye_email_sent).length },
     { key: 'expiring', label: 'Expiring Soon', count: enriched.filter((c) => c.isExpiringSoon && !c.goodbye_email_sent && c.status !== 'archived').length },
     { key: 'do_not_book', label: 'Do Not Book', count: getDoNotBookCandidates(enriched).length },
@@ -447,6 +447,7 @@ function CandidateCard({
   onQuickStatus: (status: CandidateStatus) => void;
   actionLoading: boolean;
 }) {
+  const isGoodbye = c.goodbye_email_sent;
   const isArchived = c.goodbye_email_sent || c.status === 'archived';
   const reminderDays = 30;
 
