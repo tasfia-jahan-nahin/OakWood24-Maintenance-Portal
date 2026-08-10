@@ -24,6 +24,7 @@ const actionIcons: Record<string, typeof FileText> = {
   'candidate.create': Plus,
   'candidate.update': Pencil,
   'candidate.delete': Trash2,
+  'CANDIDATE_ARCHIVED': Trash2,
   'user.signup': Plus,
   'user.signin': LogIn,
   'user.signout': LogOut,
@@ -43,6 +44,7 @@ function getIcon(action: string): typeof FileText {
 function getTone(action: string): 'valid' | 'pink' | 'expired' | 'neutral' | 'pending' {
   if (action.includes('create') || action.includes('signup')) return 'valid';
   if (action.includes('delete') || action.includes('clear')) return 'expired';
+  if (action.includes('ARCHIVED')) return 'expired';
   if (action.includes('chase')) return 'pending';
   if (action.includes('update') || action.includes('field.')) return 'pink';
   return 'neutral';

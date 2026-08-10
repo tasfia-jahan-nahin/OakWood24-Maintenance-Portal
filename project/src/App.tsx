@@ -11,11 +11,12 @@ import { DoNotBookPage } from '@/pages/DoNotBookPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { ReportsPage } from '@/pages/ReportsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { AdminPage } from '@/pages/AdminPage';
 import { Spinner } from '@/components/ui/EmptyState';
 import { StatusPopup } from '@/components/StatusPopup';
 
 function AppContent() {
-  const { session, loading } = useAuth();
+  const { session, loading, isAdmin } = useAuth();
   const [page, setPage] = useState<PageKey>('dashboard');
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [editCandidateId, setEditCandidateId] = useState<string | null>(null);
@@ -70,6 +71,7 @@ function AppContent() {
       {page === 'do-not-book' && <DoNotBookPage onEdit={handleEditCandidate} />}
       {page === 'history' && <HistoryPage />}
       {page === 'reports' && <ReportsPage />}
+      {page === 'admin' && isAdmin && <AdminPage />}
       {page === 'settings' && <SettingsPage />}
     </DashboardLayout>
   );

@@ -72,6 +72,25 @@ export interface Profile {
   created_at: string;
 }
 
+export interface TeamSummaryRecord {
+  user_id: string;
+  display_name: string;
+  total_candidates: number;
+  active_candidates: number;
+  inactive_candidates: number;
+  no_zoho_candidates: number;
+}
+
+export interface AuthActivityLog {
+  id: string;
+  user_id: string;
+  user_email: string | null;
+  display_name: string | null;
+  event_type: 'login' | 'logout';
+  details: string | null;
+  created_at: string;
+}
+
 export interface Candidate {
   id: string;
   user_id: string;

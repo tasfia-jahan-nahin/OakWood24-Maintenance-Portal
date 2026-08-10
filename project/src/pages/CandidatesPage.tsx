@@ -40,7 +40,7 @@ import {
 } from '@/types';
 import { COMPLIANCE_DATE_FIELDS, COMPLIANCE_DATE_SHORT, STATUS_LABELS } from '@/types';
 
-type FilterTab = 'all' | 'active' | 'inactive' | 'no_zoho' | 'goodbye' | 'expiring' | 'do_not_book';
+type FilterTab = 'all' | 'active' | 'inactive' | 'no_zoho' | 'goodbye' | 'expiring' | 'do_not_book' | 'archived';
 
 interface Props {
   onSelectCandidate: (id: string) => void;
@@ -98,12 +98,13 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
 
       let matchesTab = true;
       switch (tab) {
-        case 'active': matchesTab = c.status === 'active' && !c.goodbye_email_sent; break;
-        case 'inactive': matchesTab = c.status === 'inactive' && !c.goodbye_email_sent; break;
-        case 'no_zoho': matchesTab = c.status === 'no_zoho_remark'; break;
+        case 'active': matchesTab = c.status === 'active' && !c.goodbye_email_sent && c.status !== 'archived'; break;
+        case 'inactive': matchesTab = c.status === 'inactive' && !c.goodbye_email_sent && c.status !== 'archived'; break;
+        case 'no_zoho': matchesTab = c.status === 'no_zoho_remark' && c.status !== 'archived'; break;
         case 'goodbye': matchesTab = c.goodbye_email_sent; break;
-        case 'expiring': matchesTab = c.isExpiringSoon && !c.goodbye_email_sent; break;
-        case 'do_not_book': matchesTab = c.isDoNotBook && !c.goodbye_email_sent; break;
+        case 'expiring': matchesTab = c.isExpiringSoon && !c.goodbye_email_sent && c.status !== 'archived'; break;
+        case 'do_not_book': matchesTab = c.isDoNotBook && !c.goodbye_email_sent && c.status !== 'archived'; break;
+        case 'archived': matchesTab = c.status === 'archived' || c.goodbye_email_sent; break;
         default: matchesTab = true;
       }
       return matchesSearch && matchesTab;
@@ -112,12 +113,13 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
 
   const tabs: { key: FilterTab; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: enriched.length },
-    { key: 'active', label: 'Active', count: enriched.filter((c) => c.status === 'active' && !c.goodbye_email_sent).length },
-    { key: 'inactive', label: 'Inactive', count: enriched.filter((c) => c.status === 'inactive' && !c.goodbye_email_sent).length },
-    { key: 'no_zoho', label: 'No Zoho', count: enriched.filter((c) => c.status === 'no_zoho_remark').length },
+    { key: 'active', label: 'Active', count: enriched.filter((c) => c.status === 'active' && !c.goodbye_email_sent && c.status !== 'archived').length },
+    { key: 'inactive', label: 'Inactive', count: enriched.filter((c) => c.status === 'inactive' && !c.goodbye_email_sent && c.status !== 'archived').length },
+    { key: 'no_zoho', label: 'No Zoho', count: enriched.filter((c) => c.status === 'no_zoho_remark' && c.status !== 'archived').length },
     { key: 'goodbye', label: 'Goodbye Email', count: enriched.filter((c) => c.goodbye_email_sent).length },
-    { key: 'expiring', label: 'Expiring Soon', count: enriched.filter((c) => c.isExpiringSoon && !c.goodbye_email_sent).length },
+    { key: 'expiring', label: 'Expiring Soon', count: enriched.filter((c) => c.isExpiringSoon && !c.goodbye_email_sent && c.status !== 'archived').length },
     { key: 'do_not_book', label: 'Do Not Book', count: getDoNotBookCandidates(enriched).length },
+    { key: 'archived', label: 'Archived', count: enriched.filter((c) => c.status === 'archived' || c.goodbye_email_sent).length },
   ];
 
   const handleDelete = async () => {
@@ -445,7 +447,7 @@ function CandidateCard({
   onQuickStatus: (status: CandidateStatus) => void;
   actionLoading: boolean;
 }) {
-  const isGoodbye = c.goodbye_email_sent;
+  const isArchived = c.goodbye_email_sent || c.status === 'archived';
   const reminderDays = 30;
 
   return (
@@ -463,8 +465,8 @@ function CandidateCard({
               <button onClick={onClick} className="text-sm font-bold text-pink-900 truncate text-left">
                 {c.full_name}
               </button>
-              {isGoodbye ? (
-                <Badge tone="archived">Archived</Badge>
+              {isArchived ? (
+                  <Badge tone="archived">Archived</Badge>
               ) : c.isDoNotBook ? (
                 <Badge tone="expired" dot>Do Not Book</Badge>
               ) : c.status === 'active' ? (
@@ -505,7 +507,7 @@ function CandidateCard({
         </div>
 
         {/* Compliance chips */}
-        {!isGoodbye && (
+        {!isArchived && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {COMPLIANCE_DATE_FIELDS.map((field) => {
               const status = c.expiryStatuses[field];
@@ -527,7 +529,7 @@ function CandidateCard({
         )}
 
         {/* Quick status actions */}
-        {!isGoodbye && (
+        {!isArchived && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             <button
               onClick={() => onQuickStatus('active')}
@@ -554,9 +556,16 @@ function CandidateCard({
         )}
 
         <div className="mt-4 pt-3 border-t border-pink-100 flex items-center justify-between">
-          <button onClick={onEdit} className="text-xs text-pink-500 hover:text-pink-700 font-medium transition-colors">
-            Edit
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={onEdit} className="text-xs text-pink-500 hover:text-pink-700 font-medium transition-colors">
+              Edit
+            </button>
+            {isArchived && (
+              <button onClick={() => onQuickStatus('active')} className="text-xs text-success-600 hover:text-success-700 font-medium transition-colors">
+                Restore
+              </button>
+            )}
+          </div>
           <button onClick={onDelete} className="text-xs text-danger-500 hover:text-danger-600 font-medium transition-colors">
             Delete
           </button>

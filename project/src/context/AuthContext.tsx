@@ -1,11 +1,14 @@
-import { createAuditLog } from '@/lib/api';
+import { createAuditLog, fetchProfile, logAuthActivity } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import { type Session, type User } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import type { Profile } from '@/types';
 
 interface AuthContextValue {
   session: Session | null;
   user: User | null;
+  profile: Profile | null;
+  isAdmin: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
@@ -16,17 +19,39 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const loadProfile = async () => {
+    try {
+      const fetched = await fetchProfile();
+      setProfile(fetched);
+    } catch (err) {
+      console.error('Failed to fetch profile:', err);
+      setProfile(null);
+    }
+  };
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    const initialize = async () => {
+      const { data } = await supabase.auth.getSession();
       setSession(data.session);
+      if (data.session) {
+        await loadProfile();
+      }
       setLoading(false);
-    });
+    };
+
+    initialize();
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       (async () => {
         setSession(newSession);
+        if (newSession) {
+          await loadProfile();
+        } else {
+          setProfile(null);
+        }
         setLoading(false);
       })();
     });
@@ -36,6 +61,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error) {
+      try {
+        await logAuthActivity('login', `User logged in: ${email}`);
+      } catch (err) {
+        console.error('Failed to log auth activity:', err);
+      }
+    }
     return { error: error?.message ?? null };
   };
 
@@ -48,14 +80,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     if (session?.user?.email) {
-      await createAuditLog('user.signout', 'user', null, 'User signed out');
+      try {
+        await logAuthActivity('logout', `User signed out: ${session.user.email}`);
+      } catch (err) {
+        console.error('Failed to log auth activity:', err);
+      }
     }
     await supabase.auth.signOut();
     setSession(null);
+    setProfile(null);
   };
 
+  const isAdmin = profile?.role === 'admin';
+  // Ensure the designated administrator email always has admin privileges in the UI
+  const designatedAdminEmail = 'ptasfia789@gmail.com';
+  const isDesignatedAdmin = session?.user?.email === designatedAdminEmail;
+  const effectiveIsAdmin = isAdmin || isDesignatedAdmin;
+
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, isAdmin: effectiveIsAdmin, loading, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

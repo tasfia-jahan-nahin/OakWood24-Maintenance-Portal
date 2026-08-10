@@ -16,6 +16,8 @@ import type {
   Profile,
   ReminderSettings,
   ReminderSettingsInput,
+  TeamSummaryRecord,
+  AuthActivityLog,
   WarningTier,
 } from '@/types';
 import {
@@ -37,15 +39,12 @@ export async function logChange(
   newValue: string | null = null,
   entityType = 'candidate',
 ): Promise<void> {
-  const { id, email } = await getCurrentUser();
   const { error } = await supabase.rpc('log_change_history', {
     p_candidate_id: candidateId,
     p_action: action,
     p_old_value: oldValue,
     p_new_value: newValue,
     p_entity_type: entityType,
-    p_user_id: id,
-    p_user_email: email,
   });
   if (error) console.error('Failed to log change:', error);
 }
@@ -85,6 +84,28 @@ export async function fetchAuditLogs(limit = 100) {
     .select('*')
     .order('created_at', { ascending: false })
     .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function logAuthActivity(eventType: 'login' | 'logout', details?: string): Promise<void> {
+  const { error } = await supabase.rpc('log_auth_activity', {
+    p_event_type: eventType,
+    p_details: details ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function fetchAuthActivityLogs(limit = 100): Promise<AuthActivityLog[]> {
+  const { data, error } = await supabase.rpc('fetch_auth_activity_logs', {
+    limit_rows: limit,
+  });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function fetchTeamSummary(): Promise<TeamSummaryRecord[]> {
+  const { data, error } = await supabase.rpc('fetch_team_summary');
   if (error) throw error;
   return data ?? [];
 }
@@ -147,10 +168,39 @@ export async function updateCandidate(
       const newVal = String((input as Record<string, unknown>)[key] ?? '');
       if (oldVal !== newVal) {
         await logChange(id, `field.${key}`, oldVal || null, newVal || null);
+        // Special-case: when a candidate is moved to archived, write an explicit audit entry
+        if (key === 'status' && newVal.toLowerCase().includes('archiv')) {
+          const details = `Candidate ${candidateName ?? id} moved to Archived`;
+          try {
+            await logChange(id, 'CANDIDATE_ARCHIVED', null, details);
+          } catch (err) {
+            console.error('Failed to log candidate archived change_history:', err);
+          }
+          try {
+            await createAuditLog('CANDIDATE_ARCHIVED', 'candidate', id, details);
+          } catch (err) {
+            console.error('Failed to create audit log for candidate archived:', err);
+          }
+        }
       }
     }
   } else {
     await logChange(id, 'candidate.update', null, `Updated: ${candidateName ?? id}`);
+  }
+
+  // If remark indicates goodbye/archive, write an explicit archived audit entry
+  if (input.remark !== undefined && (input.remark ?? '').toLowerCase().includes('goodbye email sent')) {
+    const details = `Candidate ${candidateName ?? id} moved to Archived`;
+    try {
+      await logChange(id, 'CANDIDATE_ARCHIVED', null, details);
+    } catch (err) {
+      console.error('Failed to log candidate archived change_history (remark path):', err);
+    }
+    try {
+      await createAuditLog('CANDIDATE_ARCHIVED', 'candidate', id, details);
+    } catch (err) {
+      console.error('Failed to create audit log for candidate archived (remark path):', err);
+    }
   }
   return data;
 }
@@ -692,27 +742,9 @@ export async function commitImport(
 }
 
 // ---------- File parsing (xlsx/csv) ----------
-export async function parseExcelFile(file: File): Promise<string> {
-  const ext = file.name.split('.').pop()?.toLowerCase();
+import { readSheet } from 'read-excel-file/browser';
 
-  if (ext === 'csv' || ext === 'txt') {
-    return await file.text();
-  }
-
-  const XLSX = await import('xlsx');
-  const data = await file.arrayBuffer();
-  const workbook = XLSX.read(data, { type: 'array' });
-  const firstSheet = workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[firstSheet];
-
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
-    header: 1,
-    raw: false,
-    defval: '',
-    blankrows: false,
-  });
-
-  // Keep each Excel record on exactly one line
+function normalizeSpreadsheetRows(rows: unknown[][]): string {
   return rows
     .map((row) =>
       row
@@ -725,6 +757,34 @@ export async function parseExcelFile(file: File): Promise<string> {
         .join('\t'),
     )
     .join('\n');
+}
+
+export async function parseExcelFile(file: File): Promise<string> {
+  const ext = file.name.split('.').pop()?.toLowerCase();
+
+  if (ext === 'csv' || ext === 'txt') {
+    return await file.text();
+  }
+
+  if (ext === 'xls') {
+    const data = await file.arrayBuffer();
+    const XLSX = await import('sheetjs-style');
+    const workbook = XLSX.read(data, { type: 'array' });
+    const firstSheet = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheet];
+
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+      header: 1,
+      raw: false,
+      defval: '',
+      blankrows: false,
+    });
+
+    return normalizeSpreadsheetRows(rows);
+  }
+
+  const rows = await readSheet(file);
+  return normalizeSpreadsheetRows(rows as unknown[][]);
 }
 
 // ---------- OCR Document Scanner ----------
@@ -816,9 +876,11 @@ export async function fetchProfile(): Promise<Profile | null> {
 }
 
 export async function updateProfile(displayName: string, avatarUrl: string): Promise<void> {
+  const trimmedName = displayName.trim();
+  const trimmedAvatar = avatarUrl?.trim() || null;
   const { error } = await supabase.rpc('upsert_profile', {
-    p_display_name: displayName,
-    p_avatar_url: avatarUrl,
+    p_display_name: trimmedName,
+    p_avatar_url: trimmedAvatar,
   });
   if (error) throw error;
 }

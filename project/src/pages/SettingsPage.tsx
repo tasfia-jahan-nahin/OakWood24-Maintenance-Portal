@@ -5,10 +5,12 @@ import {
   Bell,
   Check,
   Database,
+  LogIn,
   Save,
   ShieldAlert,
   SlidersHorizontal,
   Trash2,
+  UserCircle,
 } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -18,8 +20,11 @@ import { PageHeader, Spinner } from '@/components/ui/EmptyState';
 import {
   clearAllCandidates,
   createAuditLog,
+  fetchProfile,
+  updateProfile,
   fetchReminderSettings,
   updateReminderSettings,
+  fetchAuthActivityLogs,
 } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -52,6 +57,10 @@ const FIELD_CONFIG: { key: keyof ReminderSettingsInput; label: string; descripti
 export function SettingsPage() {
   const { user } = useAuth();
   const [settings, setSettings] = useState<ReminderSettings | null>(null);
+  const [profileName, setProfileName] = useState('');
+  const [profileAvatar, setProfileAvatar] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [authLogs, setAuthLogs] = useState<any[] | null>(null);
   const [form, setForm] = useState<ReminderSettingsInput>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -65,7 +74,7 @@ export function SettingsPage() {
 
   const load = useCallback(async () => {
     try {
-      const s = await fetchReminderSettings();
+      const [s, profile] = await Promise.all([fetchReminderSettings(), fetchProfile()]);
       setSettings(s);
       if (s) {
         setForm({
@@ -79,12 +88,25 @@ export function SettingsPage() {
           second_warning_days: s.second_warning_days,
         });
       }
+      if (profile) {
+        setProfileName(profile.display_name ?? '');
+        setProfileAvatar(profile.avatar_url ?? '');
+      }
+      // Load admin-only auth logs if this user is the designated admin
+      if (user?.email === 'ptasfia789@gmail.com') {
+        try {
+          const logs = await fetchAuthActivityLogs(200);
+          setAuthLogs(logs);
+        } catch (err) {
+          console.error('Failed to fetch auth activity logs:', err);
+        }
+      }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     load();
@@ -100,6 +122,18 @@ export function SettingsPage() {
       console.error(err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleProfileSave = async () => {
+    setProfileSaving(true);
+    try {
+      await updateProfile(profileName, profileAvatar);
+      setSavedAt(Date.now());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -142,8 +176,73 @@ export function SettingsPage() {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Reminder thresholds */}
         <Card className="animate-fade-in-up stagger-1">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center">
+                <UserCircle size={18} />
+              </div>
+              <CardTitle>Profile</CardTitle>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <p className="text-sm text-pink-500 mb-4">
+              Update the name and avatar shown in the portal. Your role is assigned by an administrator.
+            </p>
+            <div className="space-y-4">
+              <Input
+                label="Display name"
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+                placeholder="Your name"
+              />
+              <Input
+                label="Avatar URL"
+                value={profileAvatar}
+                onChange={(e) => setProfileAvatar(e.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+            <div className="mt-5 flex items-center justify-between">
+              <span className="text-xs text-pink-400">
+                This profile is visible in admin ownership reports.
+              </span>
+              <Button onClick={handleProfileSave} loading={profileSaving}>
+                <Save size={16} /> Save Profile
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+
+        {user?.email === 'ptasfia789@gmail.com' && (
+          <Card className="animate-fade-in-up stagger-2">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center">
+                  <LogIn size={18} />
+                </div>
+                <CardTitle>Admin User Login History</CardTitle>
+              </div>
+            </CardHeader>
+            <CardBody>
+              {authLogs == null ? (
+                <p className="text-sm text-pink-500">No login activity yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {authLogs.map((l: any) => (
+                    <div key={l.id} className="text-sm text-pink-700">
+                      <div className="font-medium">{l.user_email ?? 'Unknown'}</div>
+                      <div className="text-xs text-pink-400">{new Date(l.created_at).toLocaleString('en-GB')}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        )}
+
+        {/* Reminder thresholds */}
+        <Card className="animate-fade-in-up stagger-2">
           <CardHeader>
             <div className="flex items-center gap-2">
               <div className="w-9 h-9 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center">

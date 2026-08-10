@@ -67,7 +67,9 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
 
   const enriched = useMemo(() => enrichCandidates(candidates, settings), [candidates, settings]);
   const recentCandidates = enriched.slice(0, 5);
-  const expiringSoon = enriched.filter((c) => c.isExpiringSoon).slice(0, 6);
+  const expiringSoon = enriched
+    .filter((c) => c.isExpiringSoon && (c.status === 'active' || c.status === 'no_zoho_remark') && !c.goodbye_email_sent && c.status !== 'archived')
+    .slice(0, 6);
 
   if (loading) {
     return (
