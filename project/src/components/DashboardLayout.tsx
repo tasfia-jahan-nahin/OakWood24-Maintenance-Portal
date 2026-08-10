@@ -52,6 +52,21 @@ export function DashboardLayout({ current, onNavigate, children }: LayoutProps) 
   const { user, profile, isAdmin, signOut } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Fallback checks across user_metadata, profile table, and user email
+  const displayName =
+    user?.user_metadata?.display_name ||
+    user?.user_metadata?.full_name ||
+    profile?.display_name ||
+    user?.email?.split('@')[0] ||
+    'User';
+
+  const avatarUrl =
+    user?.user_metadata?.avatar_url ||
+    profile?.avatar_url ||
+    null;
+
+  const avatarInitial = displayName ? displayName.charAt(0).toUpperCase() : 'U';
+
   const handleNav = (page: PageKey) => {
     onNavigate(page);
     setMobileOpen(false);
@@ -97,12 +112,24 @@ export function DashboardLayout({ current, onNavigate, children }: LayoutProps) 
               <span>Maintenance Portal</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-full bg-pink-200 flex items-center justify-center text-pink-700 font-semibold text-sm">
-                {user?.email?.[0]?.toUpperCase() ?? 'U'}
+              <div className="w-9 h-9 rounded-full bg-pink-200 flex items-center justify-center text-pink-700 font-semibold text-sm overflow-hidden border border-pink-200">
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={displayName}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      // Fallback to initial if URL fails to load
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  avatarInitial
+                )}
               </div>
               <div className="hidden sm:block">
-                <p className="text-xs font-semibold text-pink-800 leading-tight">{profile?.display_name ?? user?.email ?? 'User'}</p>
-                <p className="text-xs text-pink-400 leading-tight">{profile?.role === 'admin' ? 'Administrator' : 'Coordinator'}</p>
+                <p className="text-xs font-semibold text-pink-800 leading-tight">{displayName}</p>
+                <p className="text-xs text-pink-400 leading-tight">{isAdmin || profile?.role === 'admin' ? 'Administrator' : 'Coordinator'}</p>
               </div>
             </div>
           </div>
