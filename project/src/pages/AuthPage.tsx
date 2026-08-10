@@ -17,42 +17,42 @@ export function AuthPage() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    setLoading(true);
+  e.preventDefault();
+  setError(null);
+  setSuccess(null);
+  setLoading(true);
 
-    if (mode === 'signin') {
-      const { error: err } = await signIn(email, password);
-      if (err) {
-        setError(err);
-      } else {
-        // Record login event for Admin tracking
-        try {
-          const { data: userData } = await supabase.auth.getUser();
-          if (userData?.user) {
-            await supabase.from('auth_activity_logs').insert({
-              user_id: userData.user.id,
-              email: userData.user.email,
-              action: 'LOGIN',
-              created_at: new Date().toISOString(),
-            });
-          }
-        } catch (logErr) {
-          console.error('Failed to insert login history record:', logErr);
-        }
-      }
+  if (mode === 'signin') {
+    const { error: err } = await signIn(email, password);
+    if (err) {
+      setError(err);
     } else {
-      const { error: err } = await signUp(email, password);
-      if (err) {
-        setError(err);
-      } else {
-        setSuccess('Account created! You can now sign in.');
-        setMode('signin');
+      // Record login event for Admin tracking
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await supabase.from('auth_activity_logs').insert({
+            user_id: session.user.id,
+            email: session.user.email,
+            action: 'LOGIN',
+            created_at: new Date().toISOString(),
+          });
+        }
+      } catch (logErr) {
+        console.error('Failed to insert login history record:', logErr);
       }
     }
-    setLoading(false);
-  };
+  } else {
+    const { error: err } = await signUp(email, password);
+    if (err) {
+      setError(err);
+    } else {
+      setSuccess('Account created! You can now sign in.');
+      setMode('signin');
+    }
+  }
+  setLoading(false);
+};
 
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 sm:p-6 overflow-hidden bg-gradient-to-br from-pink-100 via-rose-50 to-pink-200">
