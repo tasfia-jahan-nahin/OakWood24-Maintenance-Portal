@@ -116,7 +116,10 @@ export async function fetchCandidates(): Promise<Candidate[]> {
     .from('candidates')
     .select('*')
     .order('created_at', { ascending: false });
-  if (error) throw error;
+  if (error) {
+    console.error('Failed to fetch candidates:', error);
+    return [];
+  }
   return data ?? [];
 }
 
@@ -126,8 +129,11 @@ export async function fetchCandidate(id: string): Promise<Candidate | null> {
     .select('*')
     .eq('id', id)
     .maybeSingle();
-  if (error) throw error;
-  return data;
+  if (error) {
+    console.error(`Failed to fetch candidate ${id}:`, error);
+    return null;
+  }
+  return data ?? null;
 }
 
 export async function createCandidate(input: CandidateInput): Promise<Candidate> {
@@ -264,8 +270,11 @@ export async function fetchReminderSettings(): Promise<ReminderSettings | null> 
     .select('*')
     .limit(1)
     .maybeSingle();
-  if (error) throw error;
-  return data;
+  if (error) {
+    console.error('Failed to fetch reminder settings:', error);
+    return null;
+  }
+  return data ?? null;
 }
 
 export async function updateReminderSettings(
@@ -314,34 +323,61 @@ export interface DashboardStats {
 export async function fetchDashboardStats(
   settings?: ReminderSettings | null,
 ): Promise<DashboardStats> {
-  const candidates = await fetchCandidates();
-  const reminderDays = settings ?? (await fetchReminderSettings());
-  const reminderMap: Record<ComplianceDateField, number> = {
-    dbs_expiry_date: reminderDays?.dbs_reminder_days ?? 30,
-    passport_expiry_date: reminderDays?.passport_reminder_days ?? 30,
-    rtw_expiry_date: reminderDays?.rtw_reminder_days ?? 30,
-    evisa_expiry_date: reminderDays?.rtw_reminder_days ?? 30,
-    pmva_expiry_date: reminderDays?.pmva_reminder_days ?? 30,
-    training_expiry_date: reminderDays?.training_reminder_days ?? 20,
-  };
-  const doNotBookDays = reminderDays?.do_not_book_days ?? 7;
-  let todayChase = 0;
-  let doNotBook = 0;
-  for (const c of candidates) {
-    if (c.goodbye_email_sent) continue;
-    const exp = computeExpiryStatuses(c, reminderMap, doNotBookDays, reminderDays?.first_warning_days ?? 15, reminderDays?.second_warning_days ?? 7);
-    if (exp.isExpiringSoon) todayChase++;
-    if (exp.isDoNotBook) doNotBook++;
+  try {
+    const candidates = await fetchCandidates();
+    const reminderDays = settings ?? (await fetchReminderSettings());
+    const reminderMap: Record<ComplianceDateField, number> = {
+      dbs_expiry_date: reminderDays?.dbs_reminder_days ?? 30,
+      passport_expiry_date: reminderDays?.passport_reminder_days ?? 30,
+      rtw_expiry_date: reminderDays?.rtw_reminder_days ?? 30,
+      evisa_expiry_date: reminderDays?.rtw_reminder_days ?? 30,
+      pmva_expiry_date: reminderDays?.pmva_reminder_days ?? 30,
+      training_expiry_date: reminderDays?.training_reminder_days ?? 20,
+    };
+    const doNotBookDays = reminderDays?.do_not_book_days ?? 7;
+    let todayChase = 0;
+    let doNotBook = 0;
+
+    for (const rawCandidate of candidates) {
+      const candidate: Candidate = {
+        ...rawCandidate,
+        status: rawCandidate.status ?? 'active',
+        goodbye_email_sent: rawCandidate.goodbye_email_sent ?? false,
+      };
+
+      if (candidate.goodbye_email_sent) continue;
+      const exp = computeExpiryStatuses(
+        candidate,
+        reminderMap,
+        doNotBookDays,
+        reminderDays?.first_warning_days ?? 15,
+        reminderDays?.second_warning_days ?? 7,
+      );
+      if (exp.isExpiringSoon) todayChase++;
+      if (exp.isDoNotBook) doNotBook++;
+    }
+
+    return {
+      totalCandidates: candidates.length,
+      activeCandidates: candidates.filter((c) => (c.status ?? 'active') === 'active').length,
+      inactiveCandidates: candidates.filter((c) => c.status === 'inactive').length,
+      noZohoCandidates: candidates.filter((c) => c.status === 'no_zoho_remark').length,
+      todayChase,
+      doNotBook,
+      goodbyeEmailSent: candidates.filter((c) => c.goodbye_email_sent ?? false).length,
+    };
+  } catch (error) {
+    console.error('Failed to fetch dashboard stats:', error);
+    return {
+      totalCandidates: 0,
+      activeCandidates: 0,
+      inactiveCandidates: 0,
+      noZohoCandidates: 0,
+      todayChase: 0,
+      doNotBook: 0,
+      goodbyeEmailSent: 0,
+    };
   }
-  return {
-    totalCandidates: candidates.length,
-    activeCandidates: candidates.filter((c) => c.status === 'active').length,
-    inactiveCandidates: candidates.filter((c) => c.status === 'inactive').length,
-    noZohoCandidates: candidates.filter((c) => c.status === 'no_zoho_remark').length,
-    todayChase,
-    doNotBook,
-    goodbyeEmailSent: candidates.filter((c) => c.goodbye_email_sent).length,
-  };
 }
 
 // ---------- Expiry helpers ----------
@@ -391,6 +427,11 @@ export function getWarningTier(
   return 'none';
 }
 
+export function isExpired(expiryDate: string | null): boolean {
+  const days = daysUntilExpiry(expiryDate);
+  return days !== null && days < 0;
+}
+
 export function isCandidateDoNotBook(
   candidate: Candidate,
   expiryStatuses: Record<ComplianceDateField, ExpiryStatus>,
@@ -430,6 +471,13 @@ export function computeExpiryStatuses(
     if (status === 'expiring') isExpiringSoon = true;
     if (tier === 'first') isFirstWarning = true;
     if (tier === 'second') isSecondWarning = true;
+  }
+
+  const address1Expired = isExpired(candidate.proof_of_address_1_expiry);
+  const address2Expired = isExpired(candidate.proof_of_address_2_expiry);
+  const bothAddressProofsExpired = address1Expired && address2Expired;
+  if (bothAddressProofsExpired) {
+    isExpiringSoon = true;
   }
 
   const isDoNotBook = isCandidateDoNotBook(candidate, expiryStatuses, warningTiers);
@@ -638,10 +686,7 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; map
     if (row.full_name) {
       const hasExpiredRequiredDocument = [
         row.dbs_expiry_date,
-        row.passport_expiry_date,
         row.rtw_expiry_date,
-        row.evisa_expiry_date,
-        row.pmva_expiry_date,
         row.training_expiry_date,
       ].some((date) => {
         if (!date) return false;
@@ -924,6 +969,7 @@ export function getRegularChasingCandidates(
 ): ChaseCandidateItem[] {
   const eligibleStatuses: CandidateStatus[] = ['active', 'no_zoho_remark'];
   const fields: DocumentType[] = ['dbs', 'passport', 'rtw', 'evisa', 'pmva', 'training'];
+  const addressProofFields: DocumentType[] = ['proof_of_address_1', 'proof_of_address_2'];
 
   const latestActions = chaseActions.reduce<Record<string, ChaseActionEntry>>((acc, action) => {
     const key = `${action.candidate_id}:${action.document_type}`;
@@ -938,9 +984,40 @@ export function getRegularChasingCandidates(
     if (c.goodbye_email_sent) return [];
     if (!eligibleStatuses.includes(c.status)) return [];
 
-    const visibleFields = docType === 'all' ? fields : [docType];
+    const visibleFields = docType === 'all' ? [...fields, ...addressProofFields] : [docType];
+    const bothAddressProofsExpired = isExpired(c.proof_of_address_1_expiry) && isExpired(c.proof_of_address_2_expiry);
 
     return visibleFields.flatMap((field) => {
+      if (field === 'proof_of_address_1' || field === 'proof_of_address_2') {
+        if (!bothAddressProofsExpired) return [];
+
+        const expiryDate = field === 'proof_of_address_1' ? c.proof_of_address_1_expiry : c.proof_of_address_2_expiry;
+        if (!expiryDate) return [];
+
+        const warningTier: WarningTier = tier === 'second' ? 'none' : 'first';
+        if (tier === 'second') return [];
+
+        const completedMatch = chaseActions.some(
+          (action) =>
+            action.action === 'completed' &&
+            action.candidate_id === c.id &&
+            action.document_type === field &&
+            action.expiry_date === expiryDate,
+        );
+        if (completedMatch) return [];
+
+        const latestAction = latestActions[`${c.id}:${field}`] ?? null;
+        return [{
+          candidate: c,
+          documentType: field,
+          expiryField: DOCUMENT_TYPE_TO_FIELD[field],
+          expiryDate,
+          expiryStatus: 'expired',
+          warningTier,
+          latestAction,
+        }];
+      }
+
       const complianceField = DOCUMENT_TYPE_TO_FIELD[field];
       const expiryDate = c[complianceField] as string | null;
       if (!expiryDate) return [];
