@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock,
   Heart,
+  ShieldCheck,
   Users,
   XCircle,
   Zap,
@@ -28,11 +29,13 @@ import {
   type DashboardStats,
 } from '@/lib/api';
 import { type Candidate, type CandidateWithExpiry, type ReminderSettings } from '@/types';
+import { supabase } from '@/lib/supabase'; // Imported supabase client
 
 export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => void }) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [settings, setSettings] = useState<ReminderSettings | null>(null);
+  const [loginCount, setLoginCount] = useState<number>(0); // Added state for Auth Logins
   const [loading, setLoading] = useState(true);
   const [subHeader, setSubHeader] = useState(getShiftSubHeader());
 
@@ -44,14 +47,18 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
 
   const load = useCallback(async () => {
     try {
-      const [s, cands, settingsData] = await Promise.all([
+      // Fetch Dashboard Stats, Candidates, Reminder Settings, and Auth Activity Logs in parallel
+      const [s, cands, settingsData, authLogsRes] = await Promise.all([
         fetchDashboardStats(),
         fetchCandidates(),
         fetchReminderSettings(),
+        supabase.from('auth_activity_logs').select('id', { count: 'exact', head: true }),
       ]);
+      
       setStats(s);
       setCandidates(cands);
       setSettings(settingsData);
+      setLoginCount(authLogsRes.count ?? 0);
     } catch (err) {
       console.error('Dashboard load error:', err);
     } finally {
@@ -63,12 +70,10 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
     load();
   }, [load]);
 
-
-
   const enriched = useMemo(() => enrichCandidates(candidates, settings), [candidates, settings]);
   const recentCandidates = enriched.slice(0, 5);
   const expiringSoon = enriched
-    .filter((c) => c.isExpiringSoon && (c.status === 'active' || c.status === 'no_zoho_remark') && !c.goodbye_email_sent && c.status !== 'archived')
+    .filter((c) => c.isExpiringSoon && (c.status === 'active' || c.status === 'no_zoho_remark') && !c.goodbye_email_sent)
     .slice(0, 6);
 
   if (loading) {
@@ -81,8 +86,8 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
           <p className="mt-1 text-sm text-pink-500">{subHeader || 'Loading your compliance overview...'}</p>
         </div>
         <BDTimeShiftAlert />
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 mb-6">
-          {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-3 sm:gap-4 mb-6">
+          {Array.from({ length: 7 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SkeletonCard />
@@ -103,14 +108,17 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
 
       <BDTimeShiftAlert />
 
-      {/* Metric cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 mb-6">
+      {/* Metric cards grid with Active Logins integrated */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-3 sm:gap-4 mb-6">
         <MetricCard icon={<Users size={18} />} label="Total Candidates" value={stats?.totalCandidates ?? 0} tone="pink" delay="stagger-1" onClick={() => onNavigate('candidates')} />
         <MetricCard icon={<CheckCircle2 size={18} />} label="Active" value={stats?.activeCandidates ?? 0} tone="success" delay="stagger-2" onClick={() => onNavigate('candidates')} />
         <MetricCard icon={<Clock size={18} />} label="Inactive" value={stats?.inactiveCandidates ?? 0} tone="neutral" delay="stagger-3" onClick={() => onNavigate('candidates')} />
         <MetricCard icon={<AlertTriangle size={18} />} label="No Zoho" value={stats?.noZohoCandidates ?? 0} tone="warning" delay="stagger-4" onClick={() => onNavigate('candidates')} />
         <MetricCard icon={<Zap size={18} />} label="Today's Chase" value={stats?.todayChase ?? 0} tone="rose" delay="stagger-5" onClick={() => onNavigate('chase-centre')} />
         <MetricCard icon={<Ban size={18} />} label="Do Not Book" value={stats?.doNotBook ?? 0} tone="danger" delay="stagger-6" onClick={() => onNavigate('do-not-book')} />
+        
+        {/* Auth Activity Metric Card */}
+        <MetricCard icon={<ShieldCheck size={18} />} label="Total Logins" value={loginCount} tone="pink" delay="stagger-7" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
