@@ -81,6 +81,4 @@ export function SettingsPage() {
       </form>
     </div>
   );
-}git add .
-git commit -m "Add self-contained profile display name update to SettingsPage"
-git push origin main
+}
