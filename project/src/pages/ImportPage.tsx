@@ -31,7 +31,7 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
   const [rawText, setRawText] = useState('');
   const [previews, setPreviews] = useState<ImportPreview[] | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [parsedInfo, setParsedInfo] = useState<{ count: number; mapping: Record<number, string>; headers: string[] } | null>(null);
+  const [parsedInfo, setParsedInfo] = useState<{ count: number; mapping: Record<number, string>; headers: string[]; skipped: { rowNumber: number; reason: string; rawValues: string[] }[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ created: number; updated: number; skipped: number } | null>(null);
@@ -43,9 +43,9 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
     setLoading(true);
     setResult(null);
     try {
-      const { rows, mapping, headers, warnings: w } = parseImportData(rawText);
+      const { rows, skipped, mapping, headers, warnings: w } = parseImportData(rawText);
       setWarnings(w);
-      setParsedInfo({ count: rows.length, mapping, headers });
+      setParsedInfo({ count: rows.length, skipped, mapping, headers });
       if (rows.length > 0) {
         const existing = await fetchCandidates();
         const p = await detectDuplicates(rows, existing);
@@ -98,7 +98,8 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
       setRawText('');
       setParsedInfo(null);
     } catch (err) {
-      console.error(err);
+      console.error('Import commit failed:', err);
+      setWarnings(['Import failed. Check the browser console for detailed error information.']);
     } finally {
       setSaving(false);
     }
@@ -251,14 +252,32 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
           </CardHeader>
           <CardBody>
             {parsedInfo && (
-              <div className="mb-4 flex flex-wrap gap-2">
-                {Object.entries(parsedInfo.mapping).map(([col, field]) => (
-                  <span key={col} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-pink-100 text-pink-700 text-xs font-medium">
-                    <Database size={12} />
-                    Col {Number(col) + 1} \u2192 {field.replace(/_/g, ' ')}
-                  </span>
-                ))}
-              </div>
+              <>
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {Object.entries(parsedInfo.mapping).map(([col, field]) => (
+                    <span key={col} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-pink-100 text-pink-700 text-xs font-medium">
+                      <Database size={12} />
+                      Col {Number(col) + 1} → {field.replace(/_/g, ' ')}
+                    </span>
+                  ))}
+                </div>
+
+                {parsedInfo.skipped.length > 0 && (
+                  <div className="mb-4 rounded-2xl bg-warning-50 border border-warning-400/40 p-4 text-sm text-warning-700">
+                    <div className="font-semibold">Skipped rows detected</div>
+                    <p className="mt-1 text-xs text-warning-600">
+                      {parsedInfo.skipped.length} row{parsedInfo.skipped.length !== 1 ? 's' : ''} were skipped because they were missing a required Name field.
+                    </p>
+                    <ul className="mt-2 list-disc pl-5 space-y-1">
+                      {parsedInfo.skipped.slice(0, 5).map((skip) => (
+                        <li key={skip.rowNumber}>
+                          Row {skip.rowNumber}: {skip.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
             )}
 
             <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -345,7 +364,10 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
             </div>
             <h2 className="text-xl font-bold text-pink-900">Import Complete!</h2>
             <p className="text-sm text-pink-500 mt-1">
-              {result.created} created, {result.updated} updated, {result.skipped} skipped
+              Imported {result.created + result.updated} of {result.created + result.updated + result.skipped} candidates successfully.
+            </p>
+            <p className="text-sm text-pink-500 mt-1">
+              {result.created} created, {result.updated} updated, {result.skipped} skipped.
             </p>
             <div className="mt-6 flex items-center justify-center gap-3">
               <Button variant="outline" onClick={() => { setResult(null); }}>

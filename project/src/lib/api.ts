@@ -13,6 +13,7 @@ import type {
   ExpiryStatus,
   ImportPreview,
   ParsedImportRow,
+  SkippedImportRow,
   Profile,
   ReminderSettings,
   ReminderSettingsInput,
@@ -212,14 +213,30 @@ export async function updateCandidate(
 }
 
 export async function deleteCandidate(id: string): Promise<void> {
-  const { data: existing } = await supabase
+  const { data: existing, error: readError } = await supabase
     .from('candidates')
     .select('full_name')
     .eq('id', id)
     .maybeSingle();
-  await logChange(id, 'candidate.delete', existing?.full_name ?? id, 'Deleted');
+  if (readError) {
+    console.error('Candidate delete read error:', {
+      message: readError.message,
+      details: readError.details,
+      code: readError.code,
+    });
+  }
+
   const { error } = await supabase.from('candidates').delete().eq('id', id);
-  if (error) throw error;
+  if (error) {
+    console.error('Candidate delete failed:', {
+      message: error.message,
+      details: error.details,
+      code: error.code,
+    });
+    throw error;
+  }
+
+  await logChange(id, 'candidate.delete', existing?.full_name ?? id, 'Deleted');
 }
 
 export async function clearAllCandidates(): Promise<void> {
@@ -633,11 +650,18 @@ function normalizeStatus(raw: string): CandidateStatus {
   return 'active';
 }
 
-export function parseImportData(rawText: string): { rows: ParsedImportRow[]; mapping: Record<number, string>; headers: string[]; warnings: string[] } {
+export function parseImportData(rawText: string): { rows: ParsedImportRow[]; skipped: SkippedImportRow[]; mapping: Record<number, string>; headers: string[]; warnings: string[] } {
   const warnings: string[] = [];
+  const skipped: SkippedImportRow[] = [];
   const lines = rawText.trim().split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) {
-    return { rows: [], mapping: {}, headers: [], warnings: ['Need at least a header row and one data row.'] };
+    return {
+      rows: [],
+      skipped: [],
+      mapping: {},
+      headers: [],
+      warnings: ['Need at least a header row and one data row.'],
+    };
   }
 
   const firstLine = lines[0];
@@ -680,38 +704,55 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; map
         case 'pmva_expiry_date': row.pmva_expiry_date = parseDateValue(value); break;
         case 'training_expiry_date': row.training_expiry_date = parseDateValue(value); break;
         case 'evisa_expiry_date': row.evisa_expiry_date = parseDateValue(value); break;
+        case 'proof_of_address_1_expiry': row.proof_of_address_1_expiry = parseDateValue(value); break;
+        case 'proof_of_address_2_expiry': row.proof_of_address_2_expiry = parseDateValue(value); break;
       }
     }
 
-    if (row.full_name) {
-      const hasExpiredRequiredDocument = [
-        row.dbs_expiry_date,
-        row.rtw_expiry_date,
-        row.training_expiry_date,
-      ].some((date) => {
-        if (!date) return false;
-        const days = daysUntilExpiry(date);
-        return days !== null && days < 0;
+    if (!row.full_name) {
+      skipped.push({
+        rowNumber: i + 1,
+        reason: 'Missing full_name (Name) field',
+        rawValues: cells,
       });
-      rows.push({
-        full_name: row.full_name,
-        job_title: row.job_title ?? null,
-        email: row.email ?? null,
-        phone: row.phone ?? null,
-        status: hasExpiredRequiredDocument ? 'inactive' : ((row.status as CandidateStatus) ?? 'active'),
-        remark: row.remark ?? null,
-        dbs_expiry_date: row.dbs_expiry_date ?? null,
-        passport_expiry_date: row.passport_expiry_date ?? null,
-        rtw_expiry_date: row.rtw_expiry_date ?? null,
-        evisa_expiry_date: row.evisa_expiry_date ?? null,
-        pmva_expiry_date: row.pmva_expiry_date ?? null,
-        training_expiry_date: row.training_expiry_date ?? null,
-        extra_data: row.extra_data ?? {},
-      });
+      continue;
     }
+
+    // Only core compliance documents (DBS, Right to Work, Training) cause inactivation on import
+    const hasExpiredRequiredDocument = [
+      row.dbs_expiry_date,
+      row.rtw_expiry_date,
+      row.training_expiry_date,
+    ].some((date) => {
+      if (!date) return false;
+      const days = daysUntilExpiry(date);
+      return days !== null && days < 0;
+    });
+
+    rows.push({
+      full_name: row.full_name,
+      job_title: row.job_title ?? null,
+      email: row.email ?? null,
+      phone: row.phone ?? null,
+      status: hasExpiredRequiredDocument ? 'inactive' : ((row.status as CandidateStatus) ?? 'active'),
+      remark: row.remark ?? null,
+      dbs_expiry_date: row.dbs_expiry_date ?? null,
+      passport_expiry_date: row.passport_expiry_date ?? null,
+      rtw_expiry_date: row.rtw_expiry_date ?? null,
+      evisa_expiry_date: row.evisa_expiry_date ?? null,
+      pmva_expiry_date: row.pmva_expiry_date ?? null,
+      training_expiry_date: row.training_expiry_date ?? null,
+      proof_of_address_1_expiry: row.proof_of_address_1_expiry ?? null,
+      proof_of_address_2_expiry: row.proof_of_address_2_expiry ?? null,
+      extra_data: row.extra_data ?? {},
+    });
   }
 
-  return { rows, mapping, headers, warnings };
+  if (skipped.length > 0) {
+    warnings.push(`${skipped.length} row${skipped.length === 1 ? '' : 's'} were skipped because they were missing a required Name field.`);
+  }
+
+  return { rows, skipped, mapping, headers, warnings };
 }
 
 export async function detectDuplicates(
@@ -740,45 +781,61 @@ export async function commitImport(
   let updated = 0;
   let skipped = 0;
 
+  const updatePreviews = previews.filter((p) => p.resolution === 'update' && p.existing);
+  const createPreviews = previews.filter((p) => p.resolution === 'create');
+
   for (const p of previews) {
     if (p.resolution === 'skip') {
       skipped++;
+    }
+  }
+
+  for (const p of updatePreviews) {
+    await updateCandidate(p.existing!.id, {
+      full_name: p.row.full_name,
+      job_title: p.row.job_title,
+      status: p.row.status as CandidateStatus,
+      remark: p.row.remark,
+      dbs_expiry_date: p.row.dbs_expiry_date,
+      passport_expiry_date: p.row.passport_expiry_date,
+      rtw_expiry_date: p.row.rtw_expiry_date,
+      evisa_expiry_date: p.row.evisa_expiry_date,
+      pmva_expiry_date: p.row.pmva_expiry_date,
+      training_expiry_date: p.row.training_expiry_date,
+      extra_data: p.row.extra_data,
+    });
+    updated++;
+  }
+
+  const BATCH_SIZE = 25;
+  const createRows = createPreviews.map((p) => ({
+    ...p.row,
+    role: 'Healthcare Professional',
+    goodbye_email_sent: (p.row.remark ?? '').toLowerCase().includes('goodbye email sent'),
+  }));
+
+  for (let i = 0; i < createRows.length; i += BATCH_SIZE) {
+    const chunk = createRows.slice(i, i + BATCH_SIZE);
+    const { data, error } = await supabase.from('candidates').insert(chunk).select();
+    if (error) {
+      console.error(`Import error in batch starting at row ${i + 1}:`, {
+        message: error.message,
+        details: error.details,
+        code: error.code,
+      });
+      skipped += chunk.length;
       continue;
     }
-    if (p.resolution === 'update' && p.existing) {
-      // IMMUTABLE: only update expiry dates, NOT email/phone
-      await updateCandidate(p.existing.id, {
-        full_name: p.row.full_name,
-        job_title: p.row.job_title,
-        status: p.row.status as CandidateStatus,
-        remark: p.row.remark,
-        dbs_expiry_date: p.row.dbs_expiry_date,
-        passport_expiry_date: p.row.passport_expiry_date,
-        rtw_expiry_date: p.row.rtw_expiry_date,
-        evisa_expiry_date: p.row.evisa_expiry_date,
-        pmva_expiry_date: p.row.pmva_expiry_date,
-        training_expiry_date: p.row.training_expiry_date,
-        extra_data: p.row.extra_data,
-      });
-      updated++;
-    } else if (p.resolution === 'create') {
-      await createCandidate({
-        full_name: p.row.full_name,
-        role: 'Healthcare Professional',
-        job_title: p.row.job_title,
-        email: p.row.email,
-        phone: p.row.phone,
-        status: p.row.status as CandidateStatus,
-        remark: p.row.remark,
-        dbs_expiry_date: p.row.dbs_expiry_date,
-        passport_expiry_date: p.row.passport_expiry_date,
-        rtw_expiry_date: p.row.rtw_expiry_date,
-        evisa_expiry_date: p.row.evisa_expiry_date,
-        pmva_expiry_date: p.row.pmva_expiry_date,
-        training_expiry_date: p.row.training_expiry_date,
-        extra_data: p.row.extra_data,
-      });
-      created++;
+
+    if (data?.length) {
+      created += data.length;
+      for (const createdCandidate of data) {
+        try {
+          await logChange(createdCandidate.id, 'candidate.create', null, `Created candidate: ${createdCandidate.full_name}`);
+        } catch (err) {
+          console.error('Failed to log imported candidate creation:', err);
+        }
+      }
     }
   }
 
@@ -1010,15 +1067,16 @@ export function getRegularChasingCandidates(
         return [{
           candidate: c,
           documentType: field,
-          expiryField: DOCUMENT_TYPE_TO_FIELD[field],
+          expiryField: DOCUMENT_TYPE_TO_FIELD[field] as ComplianceDateField,
           expiryDate,
           expiryStatus: 'expired',
           warningTier,
           latestAction,
-        }];
+        } as ChaseCandidateItem];
       }
 
-      const complianceField = DOCUMENT_TYPE_TO_FIELD[field];
+      if (!c.expiryStatuses || !c.warningTiers) return [];
+      const complianceField = DOCUMENT_TYPE_TO_FIELD[field] as ComplianceDateField;
       const expiryDate = c[complianceField] as string | null;
       if (!expiryDate) return [];
       if (c.expiryStatuses[complianceField] !== 'expiring') return [];
@@ -1066,7 +1124,8 @@ export function getBookingWarningCandidates(
     const visibleFields = docType === 'all' ? fields : [docType];
 
     return visibleFields.flatMap((field) => {
-      const complianceField = DOCUMENT_TYPE_TO_FIELD[field];
+      if (!c.expiryStatuses || !c.warningTiers) return [];
+      const complianceField = DOCUMENT_TYPE_TO_FIELD[field] as ComplianceDateField;
       const expiryDate = c[complianceField] as string | null;
       if (!expiryDate) return [];
       if (c.expiryStatuses[complianceField] === 'expired') return [];
@@ -1115,6 +1174,8 @@ export function verifyChaseExampleLogic(): void {
     evisa_expiry_date: null,
     pmva_expiry_date: null,
     training_expiry_date: null,
+    proof_of_address_1_expiry: null,
+    proof_of_address_2_expiry: null,
     pmva_verification_completed: false,
     training_verification_completed: false,
     extra_data: null,
@@ -1125,7 +1186,6 @@ export function verifyChaseExampleLogic(): void {
   const noZohoDbs: Candidate = {
     ...baseCandidate,
     id: 'nozoho-dbs',
-    status: 'no_zoho_remark',
     dbs_expiry_date: getDateString(25),
   };
 

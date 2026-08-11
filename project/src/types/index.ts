@@ -2,7 +2,7 @@ export type CandidateStatus = 'active' | 'inactive' | 'no_zoho_remark' | 'pendin
 
 export type UserRole = 'admin' | 'coordinator';
 
-export type DocumentType = 'dbs' | 'passport' | 'rtw' | 'evisa' | 'pmva' | 'training';
+export type DocumentType = 'dbs' | 'passport' | 'rtw' | 'evisa' | 'pmva' | 'training' | 'proof_of_address_1' | 'proof_of_address_2';
 
 export type ChaseAction = 'email_sent' | 'called' | 'waiting' | 'completed';
 
@@ -45,13 +45,15 @@ export const COMPLIANCE_DATE_SHORT: Record<ComplianceDateField, string> = {
   training_expiry_date: 'TRN',
 };
 
-export const DOCUMENT_TYPE_TO_FIELD: Record<DocumentType, ComplianceDateField> = {
+export const DOCUMENT_TYPE_TO_FIELD: Record<DocumentType, ComplianceDateField | 'proof_of_address_1_expiry' | 'proof_of_address_2_expiry'> = {
   dbs: 'dbs_expiry_date',
   passport: 'passport_expiry_date',
   rtw: 'rtw_expiry_date',
   evisa: 'evisa_expiry_date',
   pmva: 'pmva_expiry_date',
   training: 'training_expiry_date',
+  proof_of_address_1: 'proof_of_address_1_expiry',
+  proof_of_address_2: 'proof_of_address_2_expiry',
 };
 
 export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
@@ -61,6 +63,8 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   evisa: 'eVisa',
   pmva: 'PMVA',
   training: 'Training',
+  proof_of_address_1: 'Proof of Address 1',
+  proof_of_address_2: 'Proof of Address 2',
 };
 
 export interface Profile {
@@ -109,6 +113,8 @@ export interface Candidate {
   evisa_expiry_date: string | null;
   pmva_expiry_date: string | null;
   training_expiry_date: string | null;
+  proof_of_address_1_expiry: string | null;
+  proof_of_address_2_expiry: string | null;
   pmva_verification_completed: boolean;
   training_verification_completed: boolean;
   extra_data: Record<string, string> | null;
@@ -209,7 +215,15 @@ export interface ParsedImportRow {
   evisa_expiry_date: string | null;
   pmva_expiry_date: string | null;
   training_expiry_date: string | null;
+  proof_of_address_1_expiry: string | null;
+  proof_of_address_2_expiry: string | null;
   extra_data: Record<string, string>;
+}
+
+export interface SkippedImportRow {
+  rowNumber: number;
+  reason: string;
+  rawValues: string[];
 }
 
 export interface ImportPreview {

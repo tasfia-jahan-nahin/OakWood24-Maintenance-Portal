@@ -48,26 +48,27 @@ export function DashboardPage({ onNavigate }: { onNavigate: (page: PageKey) => v
   const load = useCallback(async () => {
     try {
       // Fetch Dashboard Stats, Candidates, Reminder Settings, and Auth Activity Logs with explicit count
-      const [s, cands, settingsData, authLogsRes] = await Promise.all([
+      const [s, cands, settingsData] = await Promise.all([
         fetchDashboardStats(),
         fetchCandidates(),
         fetchReminderSettings(),
-        supabase
-          .from('auth_activity_logs')
-          .select('*', { count: 'exact' })
-          .order('created_at', { ascending: false })
-          .limit(10),
       ]);
-      
+
+      const { data: logsData, count: logsCount, error: logsError } = await supabase
+        .from('auth_activity_logs')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .limit(10);
+
       setStats(s);
       setCandidates(cands);
       setSettings(settingsData);
 
-      if (authLogsRes.error) {
-        console.error('Failed to load auth activity logs:', authLogsRes.error);
+      if (logsError) {
+        console.error('Auth logs query error:', logsError.message, logsError.details);
+      } else {
+        setLoginCount(logsCount ?? logsData?.length ?? 0);
       }
-      
-      setLoginCount(authLogsRes.count ?? authLogsRes.data?.length ?? 0);
     } catch (err) {
       console.error('Dashboard load error:', err);
     } finally {
