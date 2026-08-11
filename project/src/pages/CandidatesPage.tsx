@@ -20,6 +20,7 @@ import { Modal } from '@/components/ui/Modal';
 import { SkeletonCard } from '@/components/PinkPixel';
 import { showStatusPopup } from '@/components/StatusPopup';
 import {
+  clearAllCandidates,
   commitImport,
   deleteCandidate,
   detectDuplicates,
@@ -62,6 +63,23 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
   const [pasteWarnings, setPasteWarnings] = useState<string[]>([]);
   const [pastePreview, setPastePreview] = useState<ImportPreview | null>(null);
   const [pasteSaving, setPasteSaving] = useState(false);
+
+  const handleClearAll = async () => {
+    const confirmed = window.confirm(
+      'WARNING: Are you sure you want to delete ALL candidates? This action cannot be undone.'
+    );
+    if (!confirmed) return;
+
+    setLoading(true);
+    const res = await clearAllCandidates();
+    if (res.success) {
+      setCandidates([]);
+      alert('All candidates have been removed.');
+    } else {
+      alert(`Error deleting candidates: ${res.error}`);
+    }
+    setLoading(false);
+  };
 
   const load = useCallback(async () => {
     try {
@@ -225,7 +243,7 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
         </div>
       )}
 
-      {/* Search */}
+      {/* Search and Global Actions */}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="flex-1">
           <Input
@@ -235,9 +253,12 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setPasteModalOpen(true)}>
             Paste New Candidate
+          </Button>
+          <Button variant="danger" onClick={handleClearAll} disabled={candidates.length === 0}>
+            Clear All Candidates
           </Button>
         </div>
       </div>

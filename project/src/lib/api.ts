@@ -239,12 +239,18 @@ export async function deleteCandidate(id: string): Promise<void> {
   await logChange(id, 'candidate.delete', existing?.full_name ?? id, 'Deleted');
 }
 
-export async function clearAllCandidates(): Promise<void> {
-  const { error } = await supabase.rpc('clear_all_candidates');
+export async function clearAllCandidates(): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('candidates')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000'); // Deletes all rows
+
   if (error) {
-    const detail = error.message || error.hint || error.code || 'Unknown database error';
-    throw new Error(`Failed to clear database: ${detail}`);
+    console.error('Failed to clear candidates:', error.message);
+    return { success: false, error: error.message };
   }
+
+  return { success: true };
 }
 
 // ---------- Chase Actions ----------
