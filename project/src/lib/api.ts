@@ -89,20 +89,53 @@ export async function fetchAuditLogs(limit = 100) {
   return data ?? [];
 }
 
+function isMissingTableOrSchemaError(error: { code?: string | null; message?: string | null } | null | undefined): boolean {
+  if (!error) return false;
+  const code = error.code ?? '';
+  const message = (error.message ?? '').toLowerCase();
+  return code === 'PGRST204' || code === 'PGRST205' || code === '42P01' || code === '42704' || message.includes('does not exist') || message.includes('not found') || message.includes('schema cache');
+}
+
 export async function logAuthActivity(eventType: 'login' | 'logout', details?: string): Promise<void> {
-  const { error } = await supabase.rpc('log_auth_activity', {
-    p_event_type: eventType,
-    p_details: details ?? null,
-  });
-  if (error) throw error;
+  try {
+    const { error } = await supabase.rpc('log_auth_activity', {
+      p_event_type: eventType,
+      p_details: details ?? null,
+    });
+    if (error) {
+      if (isMissingTableOrSchemaError(error)) {
+        console.warn('Auth activity logging skipped because the table or RPC is unavailable:', error.message);
+        return;
+      }
+      throw error;
+    }
+  } catch (error) {
+    if (isMissingTableOrSchemaError(error as { code?: string | null; message?: string | null } | null | undefined)) {
+      console.warn('Auth activity logging skipped because the table or RPC is unavailable.');
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function fetchAuthActivityLogs(limit = 100): Promise<AuthActivityLog[]> {
-  const { data, error } = await supabase.rpc('fetch_auth_activity_logs', {
-    limit_rows: limit,
-  });
-  if (error) throw error;
-  return data ?? [];
+  try {
+    const { data, error } = await supabase.rpc('fetch_auth_activity_logs', {
+      limit_rows: limit,
+    });
+    if (error) {
+      if (isMissingTableOrSchemaError(error)) {
+        return [];
+      }
+      throw error;
+    }
+    return data ?? [];
+  } catch (error) {
+    if (isMissingTableOrSchemaError(error as { code?: string | null; message?: string | null } | null | undefined)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function fetchTeamSummary(): Promise<TeamSummaryRecord[]> {
@@ -656,6 +689,47 @@ function normalizeStatus(raw: string): CandidateStatus {
   return 'active';
 }
 
+function normalizeExtraDataRow(row: Partial<ParsedImportRow>): Record<string, string> {
+  const extraData: Record<string, string> = { ...(row.extra_data ?? {}) };
+
+  if (row.proof_of_address_1_expiry) {
+    extraData.proof_of_address_1_expiry = row.proof_of_address_1_expiry;
+  }
+  if (row.proof_of_address_2_expiry) {
+    extraData.proof_of_address_2_expiry = row.proof_of_address_2_expiry;
+  }
+
+  return extraData;
+}
+
+function buildCandidateInsertPayload(
+  row: Partial<ParsedImportRow>,
+  defaults: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  const extraData = normalizeExtraDataRow(row);
+  const payload: Record<string, unknown> = {
+    full_name: row.full_name ?? defaults.full_name ?? null,
+    role: defaults.role ?? 'Healthcare Professional',
+    job_title: row.job_title ?? defaults.job_title ?? null,
+    email: row.email ?? defaults.email ?? null,
+    phone: row.phone ?? defaults.phone ?? null,
+    status: row.status ?? defaults.status ?? 'active',
+    remark: row.remark ?? defaults.remark ?? null,
+    goodbye_email_sent: defaults.goodbye_email_sent ?? false,
+    dbs_expiry_date: row.dbs_expiry_date ?? defaults.dbs_expiry_date ?? null,
+    passport_expiry_date: row.passport_expiry_date ?? defaults.passport_expiry_date ?? null,
+    rtw_expiry_date: row.rtw_expiry_date ?? defaults.rtw_expiry_date ?? null,
+    evisa_expiry_date: row.evisa_expiry_date ?? defaults.evisa_expiry_date ?? null,
+    pmva_expiry_date: row.pmva_expiry_date ?? defaults.pmva_expiry_date ?? null,
+    training_expiry_date: row.training_expiry_date ?? defaults.training_expiry_date ?? null,
+    extra_data: Object.keys(extraData).length > 0 ? extraData : {},
+  };
+
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined),
+  );
+}
+
 export function parseImportData(rawText: string): { rows: ParsedImportRow[]; skipped: SkippedImportRow[]; mapping: Record<number, string>; headers: string[]; warnings: string[] } {
   const warnings: string[] = [];
   const skipped: SkippedImportRow[] = [];
@@ -710,8 +784,22 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
         case 'pmva_expiry_date': row.pmva_expiry_date = parseDateValue(value); break;
         case 'training_expiry_date': row.training_expiry_date = parseDateValue(value); break;
         case 'evisa_expiry_date': row.evisa_expiry_date = parseDateValue(value); break;
-        case 'proof_of_address_1_expiry': row.proof_of_address_1_expiry = parseDateValue(value); break;
-        case 'proof_of_address_2_expiry': row.proof_of_address_2_expiry = parseDateValue(value); break;
+        case 'proof_of_address_1_expiry': {
+          const parsed = parseDateValue(value);
+          row.proof_of_address_1_expiry = parsed;
+          if (parsed) {
+            row.extra_data = { ...(row.extra_data ?? {}), proof_of_address_1_expiry: parsed };
+          }
+          break;
+        }
+        case 'proof_of_address_2_expiry': {
+          const parsed = parseDateValue(value);
+          row.proof_of_address_2_expiry = parsed;
+          if (parsed) {
+            row.extra_data = { ...(row.extra_data ?? {}), proof_of_address_2_expiry: parsed };
+          }
+          break;
+        }
       }
     }
 
@@ -814,11 +902,12 @@ export async function commitImport(
   }
 
   const BATCH_SIZE = 25;
-  const createRows = createPreviews.map((p) => ({
-    ...p.row,
-    role: 'Healthcare Professional',
-    goodbye_email_sent: (p.row.remark ?? '').toLowerCase().includes('goodbye email sent'),
-  }));
+  const createRows = createPreviews.map((p) =>
+    buildCandidateInsertPayload(p.row, {
+      role: 'Healthcare Professional',
+      goodbye_email_sent: (p.row.remark ?? '').toLowerCase().includes('goodbye email sent'),
+    }),
+  );
 
   for (let i = 0; i < createRows.length; i += BATCH_SIZE) {
     const chunk = createRows.slice(i, i + BATCH_SIZE);

@@ -33,4 +33,23 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'candidates' AND column_name = 'extra_data') THEN
     ALTER TABLE candidates ADD COLUMN extra_data jsonb;
   END IF;
+  -- Proof-of-address expiry values are intentionally not top-level columns in the DB schema;
+  -- keep them in extra_data to match the actual Supabase schema and avoid schema-cache mismatches.
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'candidates' AND column_name = 'proof_of_address_1_expiry') THEN
+    -- no-op: column intentionally omitted to avoid PostgREST column mismatch
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'candidates' AND column_name = 'proof_of_address_2_expiry') THEN
+    -- no-op: column intentionally omitted to avoid PostgREST column mismatch
+  END IF;
 END $$;
+
+-- Ensure auth_activity_logs exists for background login/logout tracking and fail gracefully when absent.
+CREATE TABLE IF NOT EXISTS auth_activity_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_email text,
+  display_name text,
+  event_type text NOT NULL CHECK (event_type IN ('login','logout')),
+  details text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);

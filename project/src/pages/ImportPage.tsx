@@ -6,7 +6,6 @@ import {
   ClipboardPaste,
   Database,
   FileSpreadsheet,
-  Loader2,
   SkipForward,
   Upload,
   X,
@@ -31,7 +30,13 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
   const [rawText, setRawText] = useState('');
   const [previews, setPreviews] = useState<ImportPreview[] | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [parsedInfo, setParsedInfo] = useState<{ count: number; mapping: Record<number, string>; headers: string[]; skipped: { rowNumber: number; reason: string; rawValues: string[] }[] } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [parsedInfo, setParsedInfo] = useState<{
+    count: number;
+    mapping: Record<number, string>;
+    headers: string[];
+    skipped: { rowNumber: number; reason: string; rawValues: string[] }[];
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ created: number; updated: number; skipped: number } | null>(null);
@@ -42,6 +47,7 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
   const handleParse = async () => {
     setLoading(true);
     setResult(null);
+    setSaveError(null);
     try {
       const { rows, skipped, mapping, headers, warnings: w } = parseImportData(rawText);
       setWarnings(w);
@@ -62,6 +68,7 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
 
   const handleFile = async (file: File) => {
     setParsingFile(true);
+    setSaveError(null);
     try {
       const text = await parseExcelFile(file);
       setRawText(text);
@@ -91,15 +98,16 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
   const handleSave = async () => {
     if (!previews) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const r = await commitImport(previews);
       setResult(r);
       setPreviews(null);
       setRawText('');
       setParsedInfo(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Import commit failed:', err);
-      setWarnings(['Import failed. Check the browser console for detailed error information.']);
+      setSaveError(err?.message || 'Import failed. Check network connection or database schema.');
     } finally {
       setSaving(false);
     }
@@ -110,44 +118,44 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
 
   return (
     <div className="animate-fade-in">
-      
-<PageHeader
-  title="Smart Importer"
-  subtitle="Upload Excel/CSV files or paste raw data — we'll auto-detect columns and handle duplicates."
-/>
-
-{parsingFile && (
-  <div className="fixed inset-0 z-[95] flex items-center justify-center bg-pink-950/20 backdrop-blur-sm pointer-events-auto">
-    <div className="rounded-3xl bg-white p-8 shadow-2xl flex flex-col items-center gap-4 pointer-events-none">
-      <img
-        src="/excel-upload-loader.gif"
-        alt="Reading Excel file"
-        className="h-44 w-44 object-contain"
-      />
-      <p className="text-center text-sm font-semibold text-pink-900">Reading your Excel file...</p>
-    </div>
-  </div>
-)}
-
-{saving && (
-  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-pink-950/20 backdrop-blur-sm">
-    <div className="flex min-w-72 flex-col items-center rounded-3xl bg-white px-10 py-8 shadow-2xl">
-      <img
-        src="/excel-upload-loader.gif"
-        alt="Saving records"
-        className="h-44 w-44 object-contain"
+      <PageHeader
+        title="Smart Importer"
+        subtitle="Upload Excel/CSV files or paste raw data — we'll auto-detect columns and handle duplicates."
       />
 
-      <h3 className="mt-4 text-lg font-bold text-pink-900">
-        Saving records...
-      </h3>
+      {parsingFile && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-pink-950/20 backdrop-blur-sm pointer-events-auto">
+          <div className="rounded-3xl bg-white p-8 shadow-2xl flex flex-col items-center gap-4 pointer-events-none">
+            <img
+              src="/excel-upload-loader.gif"
+              alt="Reading Excel file"
+              className="h-44 w-44 object-contain"
+            />
+            <p className="text-center text-sm font-semibold text-pink-900">Reading your Excel file...</p>
+          </div>
+        </div>
+      )}
 
-      <p className="mt-2 text-center text-sm text-pink-500">
-        Please wait while your candidates are imported.
-      </p>
-    </div>
-  </div>
-)}
+      {saving && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-pink-950/20 backdrop-blur-sm">
+          <div className="flex min-w-72 flex-col items-center rounded-3xl bg-white px-10 py-8 shadow-2xl">
+            <img
+              src="/excel-upload-loader.gif"
+              alt="Saving records"
+              className="h-44 w-44 object-contain"
+            />
+
+            <h3 className="mt-4 text-lg font-bold text-pink-900">
+              Saving records...
+            </h3>
+
+            <p className="mt-2 text-center text-sm text-pink-500">
+              Please wait while your candidates are imported.
+            </p>
+          </div>
+        </div>
+      )}
+
       {!previews && !result && (
         <>
           {/* Drag-and-drop zone */}
@@ -173,13 +181,14 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
                   {parsingFile ? 'Parsing file...' : 'Drag & drop Excel/CSV here'}
                 </p>
                 <p className="text-xs text-pink-400 mt-1">
-                  Supports .xlsx, .xls, .csv \u2014 or click to browse
+                  Supports .xlsx, .xls, .csv — or click to browse
                 </p>
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept=".xlsx,.xls,.csv,.txt"
                   className="hidden"
+                  onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) handleFile(file);
@@ -235,7 +244,7 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
               <CardTitle>Preview ({previews.length} rows)</CardTitle>
               {dupCount > 0 && (
                 <p className="text-xs text-pink-500 mt-1">
-                  {dupCount} duplicate{dupCount !== 1 ? 's' : ''} detected \u2014 choose: Update Expiry Dates Only, Skip, or Cancel
+                  {dupCount} duplicate{dupCount !== 1 ? 's' : ''} detected — choose: Update Expiry Dates Only, Skip, or Cancel
                 </p>
               )}
             </div>
@@ -280,6 +289,16 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
               </>
             )}
 
+            {saveError && (
+              <div className="mb-4 flex items-start gap-2 rounded-xl bg-pink-100 border border-pink-300 p-4 text-sm text-pink-900">
+                <AlertTriangle size={18} className="shrink-0 text-pink-600 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-pink-950">Failed to save candidates</p>
+                  <p className="text-xs text-pink-700 mt-0.5">{saveError}</p>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {previews.map((p, i) => (
                 <div
@@ -310,7 +329,7 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
                     </div>
                     {p.isDuplicate && p.existing && (
                       <p className="text-xs text-warning-600 mt-1">
-                        Matches existing: {p.existing.full_name} ({p.existing.email ?? p.existing.phone}) \u2014 email/phone will NOT be overwritten
+                        Matches existing: {p.existing.full_name} ({p.existing.email ?? p.existing.phone}) — email/phone will NOT be overwritten
                       </p>
                     )}
                   </div>
@@ -340,7 +359,7 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
             </div>
 
             <div className="mt-5 flex items-center justify-between">
-              <Button variant="ghost" onClick={() => { setPreviews(null); setParsedInfo(null); }}>
+              <Button variant="ghost" onClick={() => { setPreviews(null); setParsedInfo(null); setSaveError(null); }}>
                 <X size={16} /> Cancel
               </Button>
               <Button onClick={handleSave} loading={saving} disabled={pendingCount > 0}>
@@ -386,7 +405,7 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
           <EmptyState
             icon={<FileSpreadsheet size={28} />}
             title="How it works"
-            description="Upload an Excel file or paste rows above. We'll detect column headers automatically \u2014 including Job Role, Position, or any custom columns. No template needed."
+            description="Upload an Excel file or paste rows above. We'll detect column headers automatically — including Job Role, Position, or any custom columns. No template needed."
           />
         </div>
       )}
