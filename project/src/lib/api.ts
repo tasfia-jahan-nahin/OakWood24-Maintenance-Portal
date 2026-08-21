@@ -1149,14 +1149,14 @@ export function getRegularChasingCandidates(
         const warningTier: WarningTier = tier === 'second' ? 'none' : 'first';
         if (tier === 'second') return [];
 
-        const completedMatch = chaseActions.some(
+        const receivedMatch = chaseActions.some(
           (action) =>
             action.action === 'completed' &&
             action.candidate_id === c.id &&
             action.document_type === field &&
             action.expiry_date === expiryDate,
         );
-        if (completedMatch) return [];
+        if (receivedMatch) return [];
 
         const latestAction = latestActions[`${c.id}:${field}`] ?? null;
         return [{
@@ -1180,14 +1180,14 @@ export function getRegularChasingCandidates(
       if (tier === 'first' && warningTier !== 'first') return [];
       if (tier === 'second' && warningTier !== 'second') return [];
 
-      const completedMatch = chaseActions.some(
+      const receivedMatch = chaseActions.some(
         (action) =>
           action.action === 'completed' &&
           action.candidate_id === c.id &&
           action.document_type === field &&
           action.expiry_date === expiryDate,
       );
-      if (completedMatch) return [];
+      if (receivedMatch) return [];
 
       const latestAction = latestActions[`${c.id}:${field}`] ?? null;
 

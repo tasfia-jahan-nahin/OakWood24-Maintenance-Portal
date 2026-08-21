@@ -52,6 +52,7 @@ export function ChaseCentrePage({ onEdit }: Props) {
   const [receivedSaving, setReceivedSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [chaseActions, setChaseActions] = useState<ChaseActionEntry[]>([]);
+  const [optimisticallyReceived, setOptimisticallyReceived] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -74,9 +75,11 @@ export function ChaseCentrePage({ onEdit }: Props) {
     load();
   }, [load]);
 
-  const chaseCandidates = useMemo(
-    () => getRegularChasingCandidates(candidates, chaseActions, tab, tier),
-    [candidates, chaseActions, tab, tier],
+  const items = useMemo(
+    () => getRegularChasingCandidates(candidates, chaseActions, tab, tier).filter(
+      (item) => !optimisticallyReceived.has(`${item.candidate.id}:${item.documentType}:${item.expiryDate}`),
+    ),
+    [candidates, chaseActions, optimisticallyReceived, tab, tier],
   );
 
   const firstWarningCount = useMemo(
@@ -123,6 +126,8 @@ export function ChaseCentrePage({ onEdit }: Props) {
 
   const handleConfirmReceived = async () => {
     if (!receivedTarget) return;
+    const receivedKey = `${receivedTarget.candidate.id}:${receivedTarget.documentType}:${receivedTarget.expiryDate}`;
+    setOptimisticallyReceived((current) => new Set(current).add(receivedKey));
     setReceivedSaving(true);
     try {
       await addChaseAction(
@@ -136,6 +141,11 @@ export function ChaseCentrePage({ onEdit }: Props) {
       setSuccessMessage(`${receivedTarget.candidate.full_name}'s ${DOCUMENT_TYPE_LABELS[receivedTarget.documentType]} was marked Received.`);
       setReceivedTarget(null);
     } catch (err) {
+      setOptimisticallyReceived((current) => {
+        const next = new Set(current);
+        next.delete(receivedKey);
+        return next;
+      });
       console.error(err);
     } finally {
       setReceivedSaving(false);
@@ -239,7 +249,7 @@ export function ChaseCentrePage({ onEdit }: Props) {
         ))}
       </div>
 
-      {chaseCandidates.length === 0 ? (
+      {items.length === 0 ? (
         <Card>
           <EmptyState
             icon={<CheckCircle2 size={28} />}
@@ -249,7 +259,7 @@ export function ChaseCentrePage({ onEdit }: Props) {
         </Card>
       ) : (
         <div className="space-y-3">
-          {chaseCandidates.map((item, i) => {
+          {items.map((item, i) => {
             const { candidate, documentType, expiryDate, expiryField, warningTier, latestAction } = item;
             const days = daysUntilExpiry(expiryDate);
             const docLabel = DOCUMENT_TYPE_LABELS[documentType];
