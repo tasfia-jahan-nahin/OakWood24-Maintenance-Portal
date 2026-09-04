@@ -438,7 +438,7 @@ export async function fetchDashboardStats(
 }
 
 // ---------- Expiry helpers ----------
-export function daysUntilExpiry(expiryDate: string | null): number | null {
+export function daysUntilExpiry(expiryDate: string | null | undefined): number | null {
   if (!expiryDate) return null;
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -448,7 +448,7 @@ export function daysUntilExpiry(expiryDate: string | null): number | null {
 }
 
 export function getExpiryStatus(
-  expiryDate: string | null,
+  expiryDate: string | null | undefined,
   reminderDays: number,
 ): ExpiryStatus {
   if (!expiryDate) return 'missing';
@@ -459,7 +459,7 @@ export function getExpiryStatus(
   return 'valid';
 }
 
-export function getExpiryBadgeText(expiryDate: string | null, reminderDays: number): string {
+export function getExpiryBadgeText(expiryDate: string | null | undefined, reminderDays: number): string {
   if (!expiryDate) return 'Missing';
   const days = daysUntilExpiry(expiryDate);
   if (days === null) return 'Missing';
@@ -471,7 +471,7 @@ export function getExpiryBadgeText(expiryDate: string | null, reminderDays: numb
 }
 
 export function getWarningTier(
-  expiryDate: string | null,
+  expiryDate: string | null | undefined,
   firstWarningDays: number,
   secondWarningDays: number,
 ): WarningTier {
@@ -484,7 +484,7 @@ export function getWarningTier(
   return 'none';
 }
 
-export function isExpired(expiryDate: string | null): boolean {
+export function isExpired(expiryDate: string | null | undefined): boolean {
   const days = daysUntilExpiry(expiryDate);
   return days !== null && days < 0;
 }
@@ -604,15 +604,15 @@ const HEADER_ALIASES: Record<string, string[]> = {
     'mandatory trainings date',
     'mandatory trainings expiry',
   ],
+  cos_expiry_date: [
+    'cos',
+    'cos expiry',
+    'cos expiry date',
+    'certificate of sponsorship',
+    'certificate of sponsorship expiry',
+    'certificate of sponsorship expiry date',
+  ],
   evisa_expiry_date: [
-      cos_expiry_date: [
-        'cos',
-        'cos expiry',
-        'cos expiry date',
-        'certificate of sponsorship',
-        'certificate of sponsorship expiry',
-        'certificate of sponsorship expiry date',
-      ],
     'evisa',
     'evisa expiry',
     'evisa expiry date',
@@ -907,9 +907,7 @@ export async function commitImport(
       passport_expiry_date: p.row.passport_expiry_date,
       rtw_expiry_date: p.row.rtw_expiry_date,
       evisa_expiry_date: p.row.evisa_expiry_date,
-        cos_expiry_date: p.row.cos_expiry_date,
-        const fields: DocumentType[] = ['dbs', 'passport', 'rtw', 'evisa', 'cos', 'pmva', 'training'];
-        'DBS Expiry', 'Passport Expiry', 'RTW Expiry', 'eVisa Expiry', 'CoS Expiry', 'PMVA Expiry', 'Training Expiry',
+      cos_expiry_date: p.row.cos_expiry_date,
       pmva_expiry_date: p.row.pmva_expiry_date,
       training_expiry_date: p.row.training_expiry_date,
       extra_data: p.row.extra_data,
@@ -1036,7 +1034,7 @@ export async function scanDocument(file: File): Promise<OCRResult> {
 export function exportToCSV(candidates: CandidateWithExpiry[]): string {
   const headers = [
     'Full Name', 'Job Role', 'Role', 'Email', 'Phone', 'Status', 'Remark',
-    'DBS Expiry', 'Passport Expiry', 'RTW Expiry', 'eVisa Expiry', 'PMVA Expiry', 'Training Expiry',
+    'DBS Expiry', 'Passport Expiry', 'RTW Expiry', 'eVisa Expiry', 'CoS Expiry', 'PMVA Expiry', 'Training Expiry',
     'PMVA Verified', 'Training Verified', 'Do Not Book',
   ];
   const rows = candidates.map((c) => [

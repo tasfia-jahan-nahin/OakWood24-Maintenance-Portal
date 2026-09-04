@@ -46,6 +46,7 @@ export function ReportsPage() {
       passport_expiry_date: { valid: 0, expiring: 0, expired: 0, missing: 0 },
       rtw_expiry_date: { valid: 0, expiring: 0, expired: 0, missing: 0 },
       evisa_expiry_date: { valid: 0, expiring: 0, expired: 0, missing: 0 },
+      cos_expiry_date: { valid: 0, expiring: 0, expired: 0, missing: 0 },
       pmva_expiry_date: { valid: 0, expiring: 0, expired: 0, missing: 0 },
       training_expiry_date: { valid: 0, expiring: 0, expired: 0, missing: 0 },
     };

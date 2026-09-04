@@ -1,4 +1,3 @@
-  ...(['dbs', 'passport', 'rtw', 'evisa', 'cos', 'pmva', 'training'] as DocumentType[]).map((t) => ({
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
@@ -94,7 +93,7 @@ export function ChaseCentrePage({ onEdit }: Props) {
 
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: getRegularChasingCandidates(candidates, chaseActions, 'all', tier).length },
-    ...(['dbs', 'passport', 'rtw', 'evisa', 'pmva', 'training'] as DocumentType[]).map((t) => ({
+    ...(['dbs', 'passport', 'rtw', 'evisa', 'cos', 'pmva', 'training'] as DocumentType[]).map((t) => ({
       key: t,
       label: DOCUMENT_TYPE_LABELS[t],
       count: getRegularChasingCandidates(candidates, chaseActions, t, tier).length,
