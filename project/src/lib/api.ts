@@ -145,6 +145,14 @@ export async function fetchTeamSummary(): Promise<TeamSummaryRecord[]> {
 }
 
 // ---------- Candidates ----------
+function normalizeCandidate(candidate: Candidate): Candidate {
+  const legacyExpiry = candidate.extra_data?.cos_expiry_date ?? null;
+  return {
+    ...candidate,
+    cos_expiry_date: candidate.cos_expiry_date ?? legacyExpiry,
+  };
+}
+
 export async function fetchCandidates(): Promise<Candidate[]> {
   const { data, error } = await supabase
     .from('candidates')
@@ -154,7 +162,7 @@ export async function fetchCandidates(): Promise<Candidate[]> {
     console.error('Failed to fetch candidates:', error);
     return [];
   }
-  return data ?? [];
+  return (data ?? []).map(normalizeCandidate);
 }
 
 export async function fetchCandidate(id: string): Promise<Candidate | null> {
@@ -167,7 +175,7 @@ export async function fetchCandidate(id: string): Promise<Candidate | null> {
     console.error(`Failed to fetch candidate ${id}:`, error);
     return null;
   }
-  return data ?? null;
+  return data ? normalizeCandidate(data) : null;
 }
 
 export async function createCandidate(input: CandidateInput): Promise<Candidate> {
@@ -176,7 +184,7 @@ export async function createCandidate(input: CandidateInput): Promise<Candidate>
   const { data, error } = await supabase.from('candidates').insert(payload).select().single();
   if (error) throw error;
   await logChange(data.id, 'candidate.create', null, `Created candidate: ${data.full_name}`);
-  return data;
+  return normalizeCandidate(data);
 }
 
 export async function updateCandidate(
@@ -242,7 +250,7 @@ export async function updateCandidate(
       console.error('Failed to create audit log for candidate archived (remark path):', err);
     }
   }
-  return data;
+  return normalizeCandidate(data);
 }
 
 export async function deleteCandidate(id: string): Promise<void> {
@@ -1138,7 +1146,7 @@ export function getRegularChasingCandidates(
   tier: 'first' | 'second' | 'all' = 'all',
 ): ChaseCandidateItem[] {
   const eligibleStatuses: CandidateStatus[] = ['active', 'no_zoho_remark'];
-  const fields: DocumentType[] = ['dbs', 'passport', 'rtw', 'evisa', 'pmva', 'training'];
+  const fields: DocumentType[] = ['dbs', 'passport', 'rtw', 'evisa', 'cos', 'pmva', 'training'];
   const addressProofFields: DocumentType[] = ['proof_of_address_1', 'proof_of_address_2'];
 
   const latestActions = chaseActions.reduce<Record<string, ChaseActionEntry>>((acc, action) => {
@@ -1228,7 +1236,7 @@ export function getBookingWarningCandidates(
   tier: 'first' | 'second' | 'all' = 'all',
 ): ChaseCandidateItem[] {
   const eligibleStatuses: CandidateStatus[] = ['active', 'no_zoho_remark'];
-  const fields: DocumentType[] = ['dbs', 'passport', 'rtw', 'evisa', 'pmva', 'training'];
+  const fields: DocumentType[] = ['dbs', 'passport', 'rtw', 'evisa', 'cos', 'pmva', 'training'];
 
   return candidates.flatMap((c) => {
     if (c.goodbye_email_sent) return [];
