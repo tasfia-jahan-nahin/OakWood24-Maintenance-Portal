@@ -783,6 +783,9 @@ function normalizeExtraDataRow(row: Partial<ParsedImportRow>): Record<string, st
   if (row.proof_of_address_2_expiry) {
     extraData.proof_of_address_2_expiry = row.proof_of_address_2_expiry;
   }
+  if (row.cos_expiry_date) {
+    extraData.cos_expiry_date = row.cos_expiry_date;
+  }
 
   return extraData;
 }
@@ -805,7 +808,6 @@ function buildCandidateInsertPayload(
     passport_expiry_date: row.passport_expiry_date ?? defaults.passport_expiry_date ?? null,
     rtw_expiry_date: row.rtw_expiry_date ?? defaults.rtw_expiry_date ?? null,
     evisa_expiry_date: row.evisa_expiry_date ?? defaults.evisa_expiry_date ?? null,
-      cos_expiry_date: row.cos_expiry_date ?? defaults.cos_expiry_date ?? null,
     pmva_expiry_date: row.pmva_expiry_date ?? defaults.pmva_expiry_date ?? null,
     training_expiry_date: row.training_expiry_date ?? defaults.training_expiry_date ?? null,
     extra_data: Object.keys(extraData).length > 0 ? extraData : {},
@@ -982,10 +984,13 @@ export async function commitImport(
       passport_expiry_date: p.row.passport_expiry_date,
       rtw_expiry_date: p.row.rtw_expiry_date,
       evisa_expiry_date: p.row.evisa_expiry_date,
-      cos_expiry_date: p.row.cos_expiry_date,
       pmva_expiry_date: p.row.pmva_expiry_date,
       training_expiry_date: p.row.training_expiry_date,
-      extra_data: p.row.extra_data,
+      extra_data: {
+        ...(p.existing!.extra_data ?? {}),
+        ...p.row.extra_data,
+        ...(p.row.cos_expiry_date ? { cos_expiry_date: p.row.cos_expiry_date } : {}),
+      },
     });
     updated++;
   }
