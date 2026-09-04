@@ -145,6 +145,52 @@ export async function fetchTeamSummary(): Promise<TeamSummaryRecord[]> {
 }
 
 // ---------- Candidates ----------
+const CANDIDATE_COLUMNS = new Set([
+  'full_name',
+  'role',
+  'job_title',
+  'email',
+  'phone',
+  'status',
+  'remark',
+  'goodbye_email_sent',
+  'notes',
+  'dbs_expiry_date',
+  'passport_expiry_date',
+  'rtw_expiry_date',
+  'evisa_expiry_date',
+  'pmva_expiry_date',
+  'training_expiry_date',
+  'proof_of_address_1_expiry',
+  'proof_of_address_2_expiry',
+  'pmva_verification_completed',
+  'training_verification_completed',
+  'extra_data',
+  'cos_expiry_date',
+]);
+
+function buildFallbackCandidatePayload(
+  payload: Record<string, unknown>,
+  existingExtraData: Record<string, unknown> | null = null,
+): Record<string, unknown> {
+  const fallback = { ...payload };
+  const extraData: Record<string, unknown> = {
+    ...(existingExtraData ?? {}),
+    ...(payload.extra_data && typeof payload.extra_data === 'object' ? payload.extra_data : {}),
+  };
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (key === 'extra_data' || value === undefined) continue;
+    if (key === 'cos_expiry_date' || !CANDIDATE_COLUMNS.has(key)) {
+      extraData[key] = value;
+      delete fallback[key];
+    }
+  }
+
+  fallback.extra_data = extraData;
+  return fallback;
+}
+
 function normalizeCandidate(candidate: Candidate): Candidate {
   const legacyExpiry = candidate.extra_data?.cos_expiry_date ?? null;
   return {
@@ -181,8 +227,16 @@ export async function fetchCandidate(id: string): Promise<Candidate | null> {
 export async function createCandidate(input: CandidateInput): Promise<Candidate> {
   const goodbyeEmailSent = (input.remark ?? '').toLowerCase().includes('goodbye email sent');
   const payload = { ...input, goodbye_email_sent: goodbyeEmailSent };
-  const { data, error } = await supabase.from('candidates').insert(payload).select().single();
-  if (error) throw error;
+  let result = await supabase.from('candidates').insert(payload).select().single();
+  if (result.error) {
+    result = await supabase
+      .from('candidates')
+      .insert(buildFallbackCandidatePayload(payload))
+      .select()
+      .single();
+  }
+  if (result.error) throw result.error;
+  const { data } = result;
   await logChange(data.id, 'candidate.create', null, `Created candidate: ${data.full_name}`);
   return normalizeCandidate(data);
 }
@@ -202,13 +256,23 @@ export async function updateCandidate(
     .eq('id', id)
     .maybeSingle();
 
-  const { data, error } = await supabase
+  let result = await supabase
     .from('candidates')
     .update(updateData)
     .eq('id', id)
     .select()
     .single();
-  if (error) throw error;
+  if (result.error) {
+    const existingExtraData = existing?.extra_data as Record<string, unknown> | null | undefined;
+    result = await supabase
+      .from('candidates')
+      .update(buildFallbackCandidatePayload(updateData, existingExtraData ?? null))
+      .eq('id', id)
+      .select()
+      .single();
+  }
+  if (result.error) throw result.error;
+  const { data } = result;
 
   if (existing) {
     for (const key of Object.keys(input)) {
@@ -936,7 +1000,14 @@ export async function commitImport(
 
   for (let i = 0; i < createRows.length; i += BATCH_SIZE) {
     const chunk = createRows.slice(i, i + BATCH_SIZE);
-    const { data, error } = await supabase.from('candidates').insert(chunk).select();
+    let result = await supabase.from('candidates').insert(chunk).select();
+    if (result.error) {
+      result = await supabase
+        .from('candidates')
+        .insert(chunk.map((row) => buildFallbackCandidatePayload(row)))
+        .select();
+    }
+    const { data, error } = result;
     if (error) {
       console.error(`Import error in batch starting at row ${i + 1}:`, {
         message: error.message,
