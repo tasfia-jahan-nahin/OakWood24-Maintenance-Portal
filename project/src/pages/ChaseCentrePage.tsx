@@ -1,3 +1,4 @@
+  ...(['dbs', 'passport', 'rtw', 'evisa', 'cos', 'pmva', 'training'] as DocumentType[]).map((t) => ({
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
@@ -137,6 +138,7 @@ export function ChaseCentrePage({ onEdit }: Props) {
         'Received',
         receivedTarget.expiryDate,
       );
+      setCandidates((current) => current.filter((candidate) => candidate.id !== receivedTarget.candidate.id));
       await load();
       setSuccessMessage(`${receivedTarget.candidate.full_name}'s ${DOCUMENT_TYPE_LABELS[receivedTarget.documentType]} was marked Received.`);
       setReceivedTarget(null);

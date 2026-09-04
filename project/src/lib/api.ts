@@ -387,6 +387,7 @@ export async function fetchDashboardStats(
       passport_expiry_date: reminderDays?.passport_reminder_days ?? 30,
       rtw_expiry_date: reminderDays?.rtw_reminder_days ?? 30,
       evisa_expiry_date: reminderDays?.rtw_reminder_days ?? 30,
+        cos_expiry_date: reminderDays?.cos_reminder_days ?? 30,
       pmva_expiry_date: reminderDays?.pmva_reminder_days ?? 30,
       training_expiry_date: reminderDays?.training_reminder_days ?? 20,
     };
@@ -548,6 +549,7 @@ export function enrichCandidates(
     dbs_expiry_date: settings?.dbs_reminder_days ?? 30,
     passport_expiry_date: settings?.passport_reminder_days ?? 30,
     rtw_expiry_date: settings?.rtw_reminder_days ?? 30,
+      cos_expiry_date: settings?.cos_reminder_days ?? 30,
     evisa_expiry_date: settings?.rtw_reminder_days ?? 30,
     pmva_expiry_date: settings?.pmva_reminder_days ?? 30,
     training_expiry_date: settings?.training_reminder_days ?? 20,
@@ -603,6 +605,14 @@ const HEADER_ALIASES: Record<string, string[]> = {
     'mandatory trainings expiry',
   ],
   evisa_expiry_date: [
+      cos_expiry_date: [
+        'cos',
+        'cos expiry',
+        'cos expiry date',
+        'certificate of sponsorship',
+        'certificate of sponsorship expiry',
+        'certificate of sponsorship expiry date',
+      ],
     'evisa',
     'evisa expiry',
     'evisa expiry date',
@@ -720,6 +730,7 @@ function buildCandidateInsertPayload(
     passport_expiry_date: row.passport_expiry_date ?? defaults.passport_expiry_date ?? null,
     rtw_expiry_date: row.rtw_expiry_date ?? defaults.rtw_expiry_date ?? null,
     evisa_expiry_date: row.evisa_expiry_date ?? defaults.evisa_expiry_date ?? null,
+      cos_expiry_date: row.cos_expiry_date ?? defaults.cos_expiry_date ?? null,
     pmva_expiry_date: row.pmva_expiry_date ?? defaults.pmva_expiry_date ?? null,
     training_expiry_date: row.training_expiry_date ?? defaults.training_expiry_date ?? null,
     extra_data: Object.keys(extraData).length > 0 ? extraData : {},
@@ -784,6 +795,7 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
         case 'pmva_expiry_date': row.pmva_expiry_date = parseDateValue(value); break;
         case 'training_expiry_date': row.training_expiry_date = parseDateValue(value); break;
         case 'evisa_expiry_date': row.evisa_expiry_date = parseDateValue(value); break;
+          case 'cos_expiry_date': row.cos_expiry_date = parseDateValue(value); break;
         case 'proof_of_address_1_expiry': {
           const parsed = parseDateValue(value);
           row.proof_of_address_1_expiry = parsed;
@@ -834,6 +846,7 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
       passport_expiry_date: row.passport_expiry_date ?? null,
       rtw_expiry_date: row.rtw_expiry_date ?? null,
       evisa_expiry_date: row.evisa_expiry_date ?? null,
+        cos_expiry_date: row.cos_expiry_date ?? null,
       pmva_expiry_date: row.pmva_expiry_date ?? null,
       training_expiry_date: row.training_expiry_date ?? null,
       proof_of_address_1_expiry: row.proof_of_address_1_expiry ?? null,
@@ -894,6 +907,9 @@ export async function commitImport(
       passport_expiry_date: p.row.passport_expiry_date,
       rtw_expiry_date: p.row.rtw_expiry_date,
       evisa_expiry_date: p.row.evisa_expiry_date,
+        cos_expiry_date: p.row.cos_expiry_date,
+        const fields: DocumentType[] = ['dbs', 'passport', 'rtw', 'evisa', 'cos', 'pmva', 'training'];
+        'DBS Expiry', 'Passport Expiry', 'RTW Expiry', 'eVisa Expiry', 'CoS Expiry', 'PMVA Expiry', 'Training Expiry',
       pmva_expiry_date: p.row.pmva_expiry_date,
       training_expiry_date: p.row.training_expiry_date,
       extra_data: p.row.extra_data,
@@ -1035,6 +1051,7 @@ export function exportToCSV(candidates: CandidateWithExpiry[]): string {
     c.passport_expiry_date ?? '',
     c.rtw_expiry_date ?? '',
     c.evisa_expiry_date ?? '',
+      c.cos_expiry_date ?? '',
     c.pmva_expiry_date ?? '',
     c.training_expiry_date ?? '',
     c.pmva_verification_completed ? 'Yes' : 'No',

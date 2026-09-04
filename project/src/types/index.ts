@@ -2,7 +2,7 @@ export type CandidateStatus = 'active' | 'inactive' | 'no_zoho_remark' | 'pendin
 
 export type UserRole = 'admin' | 'coordinator';
 
-export type DocumentType = 'dbs' | 'passport' | 'rtw' | 'evisa' | 'pmva' | 'training' | 'proof_of_address_1' | 'proof_of_address_2';
+export type DocumentType = 'dbs' | 'passport' | 'rtw' | 'evisa' | 'cos' | 'pmva' | 'training' | 'proof_of_address_1' | 'proof_of_address_2';
 
 export type ChaseAction = 'email_sent' | 'called' | 'waiting' | 'completed';
 
@@ -21,6 +21,7 @@ export const COMPLIANCE_DATE_FIELDS = [
   'passport_expiry_date',
   'rtw_expiry_date',
   'evisa_expiry_date',
+  'cos_expiry_date',
   'pmva_expiry_date',
   'training_expiry_date',
 ] as const;
@@ -32,6 +33,8 @@ export const COMPLIANCE_DATE_LABELS: Record<ComplianceDateField, string> = {
   passport_expiry_date: 'Passport',
   rtw_expiry_date: 'RTW',
   evisa_expiry_date: 'eVisa',
+    cos_expiry_date: 'CoS',
+    cos_expiry_date: 'CoS',
   pmva_expiry_date: 'PMVA',
   training_expiry_date: 'Training',
 };
@@ -50,6 +53,7 @@ export const DOCUMENT_TYPE_TO_FIELD: Record<DocumentType, ComplianceDateField | 
   passport: 'passport_expiry_date',
   rtw: 'rtw_expiry_date',
   evisa: 'evisa_expiry_date',
+    cos: 'cos_expiry_date',
   pmva: 'pmva_expiry_date',
   training: 'training_expiry_date',
   proof_of_address_1: 'proof_of_address_1_expiry',
@@ -61,6 +65,7 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   passport: 'Passport',
   rtw: 'RTW',
   evisa: 'eVisa',
+    cos: 'CoS',
   pmva: 'PMVA',
   training: 'Training',
   proof_of_address_1: 'Proof of Address 1',
@@ -111,6 +116,7 @@ export interface Candidate {
   passport_expiry_date: string | null;
   rtw_expiry_date: string | null;
   evisa_expiry_date: string | null;
+    cos_expiry_date: string | null;
   pmva_expiry_date: string | null;
   training_expiry_date: string | null;
   proof_of_address_1_expiry: string | null;
@@ -195,6 +201,10 @@ export interface CandidateInput {
   passport_expiry_date?: string | null;
   rtw_expiry_date?: string | null;
   evisa_expiry_date?: string | null;
+    cos_expiry_date?: string | null;
+    cos_expiry_date: string | null;
+    cos_reminder_days: number;
+    cos_reminder_days: number;
   pmva_expiry_date?: string | null;
   training_expiry_date?: string | null;
   pmva_verification_completed?: boolean;

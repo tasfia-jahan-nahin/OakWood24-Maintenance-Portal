@@ -49,7 +49,7 @@ import {
 
 type EditField =
   | 'dbs_expiry_date' | 'passport_expiry_date' | 'rtw_expiry_date'
-  | 'pmva_expiry_date' | 'training_expiry_date'
+  | 'evisa_expiry_date' | 'cos_expiry_date' | 'pmva_expiry_date' | 'training_expiry_date'
   | 'status' | 'remark' | 'job_title' | 'full_name';
 
 interface Props {
@@ -451,6 +451,8 @@ function GuidedEditorModal({
     { key: 'dbs_expiry_date', label: 'DBS Expiry' },
     { key: 'passport_expiry_date', label: 'Passport Expiry' },
     { key: 'rtw_expiry_date', label: 'RTW Expiry' },
+      { key: 'evisa_expiry_date', label: 'eVisa Expiry' },
+      { key: 'cos_expiry_date', label: 'CoS Expiry' },
     { key: 'pmva_expiry_date', label: 'PMVA Expiry' },
     { key: 'training_expiry_date', label: 'Training Expiry' },
     { key: 'status', label: 'Status' },

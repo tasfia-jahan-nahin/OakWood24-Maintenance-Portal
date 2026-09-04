@@ -360,6 +360,7 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
                 <SummaryField label="Passport" value={pastePreview.row.passport_expiry_date ?? '-'} />
                 <SummaryField label="RTW" value={pastePreview.row.rtw_expiry_date ?? '-'} />
                 <SummaryField label="eVisa" value={pastePreview.row.evisa_expiry_date ?? '-'} />
+                                <SummaryField label="CoS" value={pastePreview.row.cos_expiry_date ?? '-'} />
                 <SummaryField label="PMVA" value={pastePreview.row.pmva_expiry_date ?? '-'} />
                 <SummaryField label="Training" value={pastePreview.row.training_expiry_date ?? '-'} />
               </div>
