@@ -672,7 +672,18 @@ export function enrichCandidates(
 
 // ---------- Smart Excel Import ----------
 const HEADER_ALIASES: Record<string, string[]> = {
-  full_name: ['name', 'full name', 'fullname', 'candidate name', 'candidate', 'employee name', 'worker name'],
+  full_name: [
+    'name',
+    'full name',
+    'fullname',
+    'candidate name',
+    'candidate',
+    'employee name',
+    'worker name',
+    'staff name',
+    'first name',
+    'person name',
+  ],
   job_title: ['job role', 'role', 'position', 'title', 'designation', 'job title', 'job'],
   email: ['email', 'email address', 'e-mail', 'email id', 'mail'],
   phone: ['phone', 'phone number', 'mobile', 'mobile number', 'telephone', 'tel', 'contact', 'contact number'],
@@ -840,7 +851,11 @@ function buildCandidateInsertPayload(
 export function parseImportData(rawText: string): { rows: ParsedImportRow[]; skipped: SkippedImportRow[]; mapping: Record<number, string>; headers: string[]; warnings: string[] } {
   const warnings: string[] = [];
   const skipped: SkippedImportRow[] = [];
-  const lines = rawText.trim().split(/\r?\n/).filter((l) => l.trim());
+  const lines = rawText
+    .trim()
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.replace(/,/g, '').replace(/\t/g, '').length > 0);
   if (lines.length < 2) {
     return {
       rows: [],
@@ -912,12 +927,16 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
     }
 
     if (!row.full_name) {
-      skipped.push({
-        rowNumber: i + 1,
-        reason: 'Missing full_name (Name) field',
-        rawValues: cells,
-      });
-      continue;
+      if (row.email || row.phone) {
+        row.full_name = row.email ? row.email.split('@')[0] : `Candidate (${row.phone})`;
+      } else {
+        skipped.push({
+          rowNumber: i + 1,
+          reason: 'Missing full_name (Name) field',
+          rawValues: cells,
+        });
+        continue;
+      }
     }
 
     // Only core compliance documents (DBS, Right to Work, Training) cause inactivation on import
