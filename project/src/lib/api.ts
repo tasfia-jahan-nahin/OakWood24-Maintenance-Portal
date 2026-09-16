@@ -749,25 +749,32 @@ function detectColumnMapping(headers: string[]): Record<number, string> {
   return mapping;
 }
 
-function parseDateValue(val: string): string | null {
-  if (!val || !val.trim()) return null;
-  const trimmed = val.trim();
-  const ukMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+function parseDateValue(val: string | number): string | null {
+  if (val === undefined || val === null) return null;
+  const strVal = String(val).trim();
+  if (!strVal) return null;
+
+  // Excel serial dates use 1899-12-30 as their effective base date.
+  if (/^\d{5}(\.\d+)?$/.test(strVal)) {
+    const serial = parseFloat(strVal);
+    const utcDays = Math.floor(serial - 25569);
+    const date = new Date(utcDays * 86400 * 1000);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split('T')[0];
+    }
+  }
+
+  const ukMatch = strVal.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (ukMatch) {
     const [, d, m, y] = ukMatch;
     const year = y.length === 2 ? `20${y}` : y;
     return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (isoMatch) return trimmed;
-  const usMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if (usMatch) {
-    const [, m, d, y] = usMatch;
-    const year = y.length === 2 ? `20${y}` : y;
-    return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
-  const parsed = new Date(trimmed);
-  if (!isNaN(parsed.getTime())) {
+  const isoMatch = strVal.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) return strVal;
+
+  const parsed = new Date(strVal);
+  if (!isNaN(parsed.getTime()) && parsed.getFullYear() < 2100 && parsed.getFullYear() > 1900) {
     return parsed.toISOString().split('T')[0];
   }
   return null;
