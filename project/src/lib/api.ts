@@ -166,8 +166,24 @@ const CANDIDATE_COLUMNS = new Set([
   'pmva_verification_completed',
   'training_verification_completed',
   'extra_data',
-  'cos_expiry_date',
 ]);
+
+function moveCosExpiryToExtraData(
+  payload: Record<string, unknown>,
+  existingExtraData: Record<string, unknown> | null = null,
+): Record<string, unknown> {
+  const { cos_expiry_date, extra_data, ...candidatePayload } = payload;
+  const extraData: Record<string, unknown> = {
+    ...(existingExtraData ?? {}),
+    ...(extra_data && typeof extra_data === 'object' ? extra_data : {}),
+  };
+
+  if (cos_expiry_date !== undefined) {
+    extraData.cos_expiry_date = cos_expiry_date;
+  }
+
+  return { ...candidatePayload, extra_data: extraData };
+}
 
 function buildFallbackCandidatePayload(
   payload: Record<string, unknown>,
@@ -226,7 +242,7 @@ export async function fetchCandidate(id: string): Promise<Candidate | null> {
 
 export async function createCandidate(input: CandidateInput): Promise<Candidate> {
   const goodbyeEmailSent = (input.remark ?? '').toLowerCase().includes('goodbye email sent');
-  const payload = { ...input, goodbye_email_sent: goodbyeEmailSent };
+  const payload = moveCosExpiryToExtraData({ ...input, goodbye_email_sent: goodbyeEmailSent });
   let result = await supabase.from('candidates').insert(payload).select().single();
   if (result.error) {
     result = await supabase
@@ -256,17 +272,20 @@ export async function updateCandidate(
     .eq('id', id)
     .maybeSingle();
 
+  const candidateUpdateData = moveCosExpiryToExtraData(
+    updateData,
+    (existing?.extra_data as Record<string, unknown> | null | undefined) ?? null,
+  );
   let result = await supabase
     .from('candidates')
-    .update(updateData)
+    .update(candidateUpdateData)
     .eq('id', id)
     .select()
     .single();
   if (result.error) {
-    const existingExtraData = existing?.extra_data as Record<string, unknown> | null | undefined;
     result = await supabase
       .from('candidates')
-      .update(buildFallbackCandidatePayload(updateData, existingExtraData ?? null))
+      .update(buildFallbackCandidatePayload(candidateUpdateData))
       .eq('id', id)
       .select()
       .single();
@@ -1005,11 +1024,11 @@ export async function commitImport(
 
   for (let i = 0; i < createRows.length; i += BATCH_SIZE) {
     const chunk = createRows.slice(i, i + BATCH_SIZE);
-    let result = await supabase.from('candidates').insert(chunk).select();
+    let result = await supabase.from('candidates').upsert(chunk).select();
     if (result.error) {
       result = await supabase
         .from('candidates')
-        .insert(chunk.map((row) => buildFallbackCandidatePayload(row)))
+        .upsert(chunk.map((row) => buildFallbackCandidatePayload(row)))
         .select();
     }
     const { data, error } = result;
@@ -1019,8 +1038,7 @@ export async function commitImport(
         details: error.details,
         code: error.code,
       });
-      skipped += chunk.length;
-      continue;
+      throw error;
     }
 
     if (data?.length) {
