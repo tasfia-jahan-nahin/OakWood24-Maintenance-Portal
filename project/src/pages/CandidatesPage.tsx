@@ -175,6 +175,27 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
 
   const handlePastePreview = async () => {
     const { rows, warnings } = parseImportData(pasteText);
+    const pastedLines = pasteText
+      .trim()
+      .split(/\r?\n/)
+      .filter((line) => line.replace(/,/g, '').replace(/\t/g, '').length > 0);
+    const pastedLine = pastedLines[1] ?? '';
+    const rawRowText = pastedLine.toLowerCase();
+    let detectedStatus: CandidateStatus = 'active';
+    let hasDetectedStatus = false;
+
+    if (
+      rawRowText.includes('no_zoho') ||
+      rawRowText.includes('no zoho') ||
+      rawRowText.includes('no-zoho')
+    ) {
+      detectedStatus = 'no_zoho_remark';
+      hasDetectedStatus = true;
+    } else if (rawRowText.includes('inactive')) {
+      detectedStatus = 'inactive';
+      hasDetectedStatus = true;
+    }
+
     const resultWarnings = [...warnings];
     if (rows.length === 0) {
       resultWarnings.push('Paste one header row and one candidate data row.');
@@ -185,6 +206,9 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
     setPasteWarnings(resultWarnings);
 
     if (rows.length > 0) {
+      if (hasDetectedStatus) {
+        rows[0].status = detectedStatus;
+      }
       const [preview] = await detectDuplicates([rows[0]], candidates);
       setPastePreview(preview);
     } else {
