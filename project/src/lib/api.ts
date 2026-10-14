@@ -957,12 +957,17 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
       return days !== null && days < 0;
     });
 
+    const rawNormalizedStatus = (row.status as CandidateStatus) ?? 'active';
+
+    // Only transition 'active' candidates to 'inactive' if core compliance docs are expired
+    const shouldInactivate = hasExpiredRequiredDocument && rawNormalizedStatus === 'active';
+
     rows.push({
       full_name: row.full_name,
       job_title: row.job_title ?? null,
       email: row.email ?? null,
       phone: row.phone ?? null,
-      status: hasExpiredRequiredDocument ? 'inactive' : ((row.status as CandidateStatus) ?? 'active'),
+      status: shouldInactivate ? 'inactive' : rawNormalizedStatus,
       remark: row.remark ?? null,
       dbs_expiry_date: row.dbs_expiry_date ?? null,
       passport_expiry_date: row.passport_expiry_date ?? null,

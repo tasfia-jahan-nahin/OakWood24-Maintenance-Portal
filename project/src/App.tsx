@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AuthPage } from '@/pages/AuthPage';
 import { DashboardLayout, type PageKey } from '@/components/DashboardLayout';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { CandidatesPage } from '@/pages/CandidatesPage';
+import { ListPage } from '@/pages/ListPage';
 import { CandidateDetailPage } from '@/pages/CandidateDetailPage';
 import { ImportPage } from '@/pages/ImportPage';
 import { ChaseCentrePage } from '@/pages/ChaseCentrePage';
@@ -17,9 +18,22 @@ import { StatusPopup } from '@/components/StatusPopup';
 
 function AppContent() {
   const { session, loading, isAdmin } = useAuth();
-  const [page, setPage] = useState<PageKey>('dashboard');
+  const [page, setPage] = useState<PageKey>(() =>
+    window.location.pathname === '/list' ? 'list' : 'dashboard',
+  );
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [editCandidateId, setEditCandidateId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setPage(window.location.pathname === '/list' ? 'list' : 'dashboard');
+      setSelectedCandidateId(null);
+      setEditCandidateId(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   if (loading) {
     return (
@@ -34,6 +48,10 @@ function AppContent() {
   }
 
   const handleNavigate = (p: PageKey) => {
+    const nextPath = p === 'list' ? '/list' : '/';
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, '', nextPath);
+    }
     setPage(p);
     setSelectedCandidateId(null);
     setEditCandidateId(null);
@@ -67,6 +85,7 @@ function AppContent() {
           editMode
         />
       )}
+      {page === 'list' && <ListPage />}
       {page === 'chase-centre' && <ChaseCentrePage onEdit={handleEditCandidate} />}
       {page === 'do-not-book' && <DoNotBookPage onEdit={handleEditCandidate} />}
       {page === 'history' && <HistoryPage />}

@@ -5,6 +5,7 @@ import {
   HeartPulse,
   History,
   LayoutDashboard,
+  List,
   LogOut,
   Menu,
   Settings,
@@ -20,6 +21,7 @@ import { useAuth } from '@/context/AuthContext';
 export type PageKey =
   | 'dashboard'
   | 'candidates'
+  | 'list'
   | 'import'
   | 'edit-candidate'
   | 'chase-centre'
@@ -38,6 +40,7 @@ interface LayoutProps {
 const navItems: { key: PageKey; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'candidates', label: 'Candidates', icon: Users },
+  { key: 'list', label: 'List', icon: List },
   { key: 'import', label: 'Import', icon: Upload },
   { key: 'edit-candidate', label: 'Edit Candidate', icon: UserCircle },
   { key: 'chase-centre', label: 'Chase Centre', icon: Zap },
