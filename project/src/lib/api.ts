@@ -780,33 +780,20 @@ function parseDateValue(val: string | number): string | null {
   return null;
 }
 
-function normalizeStatus(raw: string): CandidateStatus {
-  const status = raw.trim().toLowerCase();
+function normalizeStatus(raw: string, remarkVal?: string): CandidateStatus {
+  const status = (raw || '').trim().toLowerCase();
+  const remark = (remarkVal || '').trim().toLowerCase();
 
-  // Check specific statuses before "active"
   if (
-    status.includes('no zoho') ||
-    status.includes('no_zoho') ||
-    status.includes('no-zoho')
+    status.includes('no zoho') || status.includes('no_zoho') || status.includes('no-zoho') ||
+    remark.includes('no zoho') || remark.includes('no_zoho') || remark.includes('no-zoho')
   ) {
     return 'no_zoho_remark';
   }
 
-  if (status.includes('inactive')) {
-    return 'inactive';
-  }
-
-  if (status.includes('active')) {
-    return 'active';
-  }
-
-  if (status.includes('pending')) {
-    return 'pending';
-  }
-
-  if (status.includes('archive')) {
-    return 'archived';
-  }
+  if (status.includes('inactive')) return 'inactive';
+  if (status.includes('pending')) return 'pending';
+  if (status.includes('archive')) return 'archived';
 
   return 'active';
 }
@@ -889,6 +876,7 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
   for (let i = 1; i < lines.length; i++) {
     const cells = lines[i].split(delim).map((c) => c.trim());
     const row: Partial<ParsedImportRow> = { extra_data: {} };
+    let rawStatus = '';
 
     for (let j = 0; j < headers.length; j++) {
       const field = mapping[j];
@@ -905,7 +893,7 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
         case 'job_title': row.job_title = value || null; break;
         case 'email': row.email = value || null; break;
         case 'phone': row.phone = value || null; break;
-        case 'status': row.status = value ? normalizeStatus(value) : 'active'; break;
+        case 'status': rawStatus = value; break;
         case 'remark': row.remark = value || null; break;
         case 'dbs_expiry_date': row.dbs_expiry_date = parseDateValue(value); break;
         case 'passport_expiry_date': row.passport_expiry_date = parseDateValue(value); break;
@@ -932,6 +920,8 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
         }
       }
     }
+
+    row.status = normalizeStatus(rawStatus, row.remark ?? undefined);
 
     if (!row.full_name) {
       if (row.email || row.phone) {
