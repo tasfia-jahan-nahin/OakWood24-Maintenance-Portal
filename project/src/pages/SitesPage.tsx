@@ -32,6 +32,7 @@ import {
   type CandidateSiteAssignment,
   type Site,
 } from '@/types';
+import { supabaseProjectRef } from '@/lib/supabase';
 
 const STATUS_TONES: Record<CandidateStatus, 'active' | 'inactive' | 'pink' | 'pending' | 'archived'> = {
   active: 'active',
@@ -263,6 +264,15 @@ export function SitesPage() {
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger-500/30 bg-danger-50 px-4 py-3 text-sm text-danger-600">
           <span>{error}</span>
           <Button variant="outline" size="sm" onClick={() => void loadData()}>Retry</Button>
+        </div>
+      )}
+
+      {!error && candidates.length === 0 && (
+        <div role="status" className="rounded-xl border border-warning-500/30 bg-warning-50 px-4 py-3 text-sm text-warning-700">
+          No candidate records are visible in Supabase project <span className="font-semibold">{supabaseProjectRef}</span>.
+          Sites reads the same <code>public.candidates</code> table as Candidates; verify that the deployed
+          <code className="mx-1">VITE_SUPABASE_URL</code> points to the project containing your existing records.
+          No candidate records have been created or re-imported.
         </div>
       )}
 
