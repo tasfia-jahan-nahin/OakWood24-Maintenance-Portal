@@ -100,6 +100,18 @@ export interface AuthActivityLog {
   created_at: string;
 }
 
+export interface Site {
+  id: string;
+  name: string;
+  source: 'manual' | 'candidate_import';
+  created_at: string;
+}
+
+export interface CandidateSiteAssignment {
+  site_id: string;
+  candidate_id: string;
+}
+
 export interface Candidate {
   id: string;
   user_id: string;

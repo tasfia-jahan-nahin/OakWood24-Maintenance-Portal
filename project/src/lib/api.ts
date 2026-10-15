@@ -227,6 +227,18 @@ export async function fetchCandidates(): Promise<Candidate[]> {
   return (data ?? []).map(normalizeCandidate);
 }
 
+export async function fetchCandidatesStrict(): Promise<Candidate[]> {
+  const { data, error } = await supabase
+    .from('candidates')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('Failed to fetch candidates for sites:', error);
+    throw error;
+  }
+  return (data ?? []).map(normalizeCandidate);
+}
+
 export async function fetchCandidate(id: string): Promise<Candidate | null> {
   const { data, error } = await supabase
     .from('candidates')

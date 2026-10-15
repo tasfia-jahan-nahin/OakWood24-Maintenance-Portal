@@ -12,7 +12,7 @@ import { DoNotBookPage } from '@/pages/DoNotBookPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { ReportsPage } from '@/pages/ReportsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
-import { AdminPage } from '@/pages/AdminPage';
+import { SitesPage } from '@/pages/SitesPage';
 import { Spinner } from '@/components/ui/EmptyState';
 import { StatusPopup } from '@/components/StatusPopup';
 
@@ -90,7 +90,7 @@ function AppContent() {
       {page === 'do-not-book' && <DoNotBookPage onEdit={handleEditCandidate} />}
       {page === 'history' && <HistoryPage />}
       {page === 'reports' && <ReportsPage />}
-      {page === 'admin' && isAdmin && <AdminPage />}
+      {page === 'sites' && isAdmin && <SitesPage />}
       {page === 'settings' && <SettingsPage />}
     </DashboardLayout>
   );

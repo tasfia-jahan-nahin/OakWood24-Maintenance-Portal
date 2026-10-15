@@ -2,6 +2,7 @@ import { type ReactNode, useState } from 'react';
 import {
   BarChart3,
   Ban,
+  Building2,
   HeartPulse,
   History,
   LayoutDashboard,
@@ -9,7 +10,6 @@ import {
   LogOut,
   Menu,
   Settings,
-  ShieldCheck,
   Upload,
   UserCircle,
   Users,
@@ -28,7 +28,7 @@ export type PageKey =
   | 'do-not-book'
   | 'history'
   | 'reports'
-  | 'admin'
+  | 'sites'
   | 'settings';
 
 interface LayoutProps {
@@ -47,7 +47,7 @@ const navItems: { key: PageKey; label: string; icon: typeof LayoutDashboard; adm
   { key: 'do-not-book', label: 'Do Not Book', icon: Ban },
   { key: 'history', label: 'Audit History', icon: History },
   { key: 'reports', label: 'Reports', icon: BarChart3 },
-  { key: 'admin', label: 'Admin', icon: ShieldCheck, adminOnly: true },
+  { key: 'sites', label: 'Sites', icon: Building2, adminOnly: true },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
