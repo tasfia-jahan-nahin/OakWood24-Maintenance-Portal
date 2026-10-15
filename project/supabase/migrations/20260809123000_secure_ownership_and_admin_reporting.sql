@@ -82,19 +82,23 @@ END $$;
 
 -- 5. Candidate ownership policies
 DROP POLICY IF EXISTS "select_own_candidates" ON candidates;
+DROP POLICY IF EXISTS "select_candidates" ON candidates;
 CREATE POLICY "select_candidates" ON candidates FOR SELECT
   TO authenticated USING (auth.uid() = user_id OR public.is_admin_user());
 
 DROP POLICY IF EXISTS "insert_own_candidates" ON candidates;
+DROP POLICY IF EXISTS "insert_candidates" ON candidates;
 CREATE POLICY "insert_candidates" ON candidates FOR INSERT
   TO authenticated WITH CHECK (auth.uid() = user_id OR public.is_admin_user());
 
 DROP POLICY IF EXISTS "update_own_candidates" ON candidates;
+DROP POLICY IF EXISTS "update_candidates" ON candidates;
 CREATE POLICY "update_candidates" ON candidates FOR UPDATE
   TO authenticated USING (auth.uid() = user_id OR public.is_admin_user())
   WITH CHECK (auth.uid() = user_id OR public.is_admin_user());
 
 DROP POLICY IF EXISTS "delete_own_candidates" ON candidates;
+DROP POLICY IF EXISTS "delete_candidates" ON candidates;
 CREATE POLICY "delete_candidates" ON candidates FOR DELETE
   TO authenticated USING (auth.uid() = user_id OR public.is_admin_user());
 
@@ -122,6 +126,7 @@ FOR EACH ROW EXECUTE FUNCTION public.prevent_candidate_user_transfer();
 
 -- 7. Candidate-linked object policies
 DROP POLICY IF EXISTS "select_all_chase_actions" ON chase_actions;
+DROP POLICY IF EXISTS "select_chase_actions" ON chase_actions;
 CREATE POLICY "select_chase_actions" ON chase_actions FOR SELECT
   TO authenticated USING (
     EXISTS (
@@ -132,10 +137,12 @@ CREATE POLICY "select_chase_actions" ON chase_actions FOR SELECT
   );
 
 DROP POLICY IF EXISTS "insert_own_chase_actions" ON chase_actions;
+DROP POLICY IF EXISTS "insert_chase_actions" ON chase_actions;
 CREATE POLICY "insert_chase_actions" ON chase_actions FOR INSERT
   TO authenticated WITH CHECK (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "select_all_change_history" ON change_history;
+DROP POLICY IF EXISTS "select_change_history" ON change_history;
 CREATE POLICY "select_change_history" ON change_history FOR SELECT
   TO authenticated USING (
     EXISTS (
@@ -146,10 +153,12 @@ CREATE POLICY "select_change_history" ON change_history FOR SELECT
   );
 
 DROP POLICY IF EXISTS "insert_own_change_history" ON change_history;
+DROP POLICY IF EXISTS "insert_change_history" ON change_history;
 CREATE POLICY "insert_change_history" ON change_history FOR INSERT
   TO authenticated WITH CHECK (user_id = auth.uid());
 
 DROP POLICY IF EXISTS "select_own_compliance_items" ON compliance_items;
+DROP POLICY IF EXISTS "select_compliance_items" ON compliance_items;
 CREATE POLICY "select_compliance_items" ON compliance_items FOR SELECT
   TO authenticated USING (
     EXISTS (
@@ -160,6 +169,7 @@ CREATE POLICY "select_compliance_items" ON compliance_items FOR SELECT
   );
 
 DROP POLICY IF EXISTS "insert_own_compliance_items" ON compliance_items;
+DROP POLICY IF EXISTS "insert_compliance_items" ON compliance_items;
 CREATE POLICY "insert_compliance_items" ON compliance_items FOR INSERT
   TO authenticated WITH CHECK (
     EXISTS (
@@ -170,6 +180,7 @@ CREATE POLICY "insert_compliance_items" ON compliance_items FOR INSERT
   );
 
 DROP POLICY IF EXISTS "update_own_compliance_items" ON compliance_items;
+DROP POLICY IF EXISTS "update_compliance_items" ON compliance_items;
 CREATE POLICY "update_compliance_items" ON compliance_items FOR UPDATE
   TO authenticated USING (
     EXISTS (
@@ -186,6 +197,7 @@ CREATE POLICY "update_compliance_items" ON compliance_items FOR UPDATE
   );
 
 DROP POLICY IF EXISTS "delete_own_compliance_items" ON compliance_items;
+DROP POLICY IF EXISTS "delete_compliance_items" ON compliance_items;
 CREATE POLICY "delete_compliance_items" ON compliance_items FOR DELETE
   TO authenticated USING (
     EXISTS (
