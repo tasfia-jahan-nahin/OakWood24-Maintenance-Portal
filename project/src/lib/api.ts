@@ -747,10 +747,21 @@ function normalizeHeader(h: string): string {
   return h.trim().toLowerCase().replace(/[\s_]+/g, ' ').replace(/[^a-z0-9 /]/g, '').trim();
 }
 
-function detectColumnMapping(headers: string[]): Record<number, string> {
+function looksLikePersonName(value: string): boolean {
+  const name = value.trim();
+  if (!name || /\b(?:active|inactive|pending|archived?|no[\s_-]*zoho)\b/i.test(name)) {
+    return false;
+  }
+  return /^[\p{L}\p{M}][\p{L}\p{M}'’.-]*(?:\s+[\p{L}\p{M}][\p{L}\p{M}'’.-]*)*$/u.test(name);
+}
+
+function detectColumnMapping(headers: string[], sampleCells: string[] = []): Record<number, string> {
   const mapping: Record<number, string> = {};
   for (let i = 0; i < headers.length; i++) {
     const normalized = normalizeHeader(headers[i]);
+    if (normalized === 'candidate' && !looksLikePersonName(sampleCells[i] ?? '')) {
+      continue;
+    }
     for (const [field, aliases] of Object.entries(HEADER_ALIASES)) {
       if (aliases.includes(normalized) || normalized === field) {
         mapping[i] = field;
@@ -878,7 +889,8 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
   const delim = tabCount > commaCount ? '\t' : ',';
 
   const headers = firstLine.split(delim).map((h) => h.trim());
-  const mapping = detectColumnMapping(headers);
+  const sampleCells = lines[1].split(delim).map((cell) => cell.trim());
+  const mapping = detectColumnMapping(headers, sampleCells);
 
   if (!Object.values(mapping).includes('full_name')) {
     warnings.push('No "Name" column detected — this is a mandatory field.');
