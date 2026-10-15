@@ -42,7 +42,22 @@ const STATUS_TONES: Record<CandidateStatus, 'active' | 'inactive' | 'pink' | 'pe
 };
 
 function messageForError(error: unknown): string {
-  return error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+  if (error instanceof Error) return error.message;
+  if (typeof error !== 'object' || error === null || !('message' in error)) {
+    return 'Something went wrong. Please try again.';
+  }
+
+  const message = typeof error.message === 'string' ? error.message : 'Unknown database error.';
+  const code = 'code' in error ? error.code : null;
+  const hint = 'hint' in error && typeof error.hint === 'string' ? ` ${error.hint}` : '';
+
+  if (code === 'PGRST205' || code === '42P01') {
+    return `Sites database tables are missing. Apply the latest Supabase migration. (${message})`;
+  }
+  if (code === '42501') {
+    return `Supabase denied access to Sites data. Check the Sites row-level security policies. (${message})`;
+  }
+  return `${message}${hint}`;
 }
 
 function SummaryCard({ label, value, icon: Icon }: { label: string; value: number; icon: typeof Users }) {
@@ -82,12 +97,13 @@ export function SitesPage() {
     setError(null);
     try {
       const loadedCandidates = await fetchCandidatesStrict();
+      setCandidates(loadedCandidates);
       const discovered = await ensureDiscoveredSites(getTrustOptions(loadedCandidates));
+      setSites(discovered);
       const [loadedSites, loadedAssignments] = await Promise.all([
         Promise.resolve(discovered),
         fetchCandidateSiteAssignments(),
       ]);
-      setCandidates(loadedCandidates);
       setSites(loadedSites);
       setAssignments(loadedAssignments);
       setSelectedSiteId((current) =>
