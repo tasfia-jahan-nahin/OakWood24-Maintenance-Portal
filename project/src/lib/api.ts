@@ -743,6 +743,65 @@ const HEADER_ALIASES: Record<string, string[]> = {
 
 const KNOWN_FIELDS = new Set(Object.keys(HEADER_ALIASES));
 
+const CANDIDATE_EXPORT_COLUMNS = [
+  ...Object.entries(HEADER_ALIASES).map(([field, aliases]) => [field as keyof Candidate, aliases[0]] as const),
+  ['proof_of_address_1_expiry', 'proof_of_address_1_expiry'],
+  ['proof_of_address_2_expiry', 'proof_of_address_2_expiry'],
+  ['role', 'Candidate category'],
+  ['notes', 'Candidate notes'],
+  ['goodbye_email_sent', 'Goodbye email sent'],
+  ['pmva_verification_completed', 'PMVA verification completed'],
+  ['training_verification_completed', 'Training verification completed'],
+] satisfies ReadonlyArray<readonly [keyof Candidate, string]>;
+
+export async function downloadCandidatesExcel(): Promise<number> {
+  const candidates: Candidate[] = [];
+  const pageSize = 500;
+
+  while (true) {
+    const offset = candidates.length;
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('*')
+      .order('id')
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    if (!data?.length) break;
+    candidates.push(...data.map(normalizeCandidate));
+  }
+
+  if (candidates.length === 0) return 0;
+
+  const extraKeys = [...new Set(candidates.flatMap((candidate) => Object.keys(candidate.extra_data ?? {})))].sort();
+  const usedHeaders = new Set(CANDIDATE_EXPORT_COLUMNS.map(([, header]) => normalizeHeader(header)));
+  const extraHeaders = extraKeys.map((key) => {
+    let header = key.trim() || 'Unnamed field';
+    while (usedHeaders.has(normalizeHeader(header)) || Object.keys(detectColumnMapping([header])).length > 0) {
+      header = `Extra: ${header}`;
+    }
+    usedHeaders.add(normalizeHeader(header));
+    return header;
+  });
+  const cell = (value: unknown): string | number | boolean => {
+    if (value == null) return '';
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+    return JSON.stringify(value) ?? '';
+  };
+  const rows = [
+    [...CANDIDATE_EXPORT_COLUMNS.map(([, header]) => header), ...extraHeaders],
+    ...candidates.map((candidate) => [
+      ...CANDIDATE_EXPORT_COLUMNS.map(([field]) => cell(candidate[field])),
+      ...extraKeys.map((key) => cell(candidate.extra_data?.[key])),
+    ]),
+  ];
+
+  const XLSX = await import('sheetjs-style');
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Candidates');
+  XLSX.writeFile(workbook, `oakwood24-candidates-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  return candidates.length;
+}
+
 function normalizeHeader(h: string): string {
   return h.trim().toLowerCase().replace(/[\s_]+/g, ' ').replace(/[^a-z0-9 /]/g, '').trim();
 }

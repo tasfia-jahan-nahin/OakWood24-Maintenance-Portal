@@ -5,6 +5,7 @@ import {
   Check,
   ClipboardPaste,
   Database,
+  Download,
   FileSpreadsheet,
   SkipForward,
   Upload,
@@ -20,6 +21,7 @@ import { type PageKey } from '@/components/DashboardLayout';
 import {
   commitImport,
   detectDuplicates,
+  downloadCandidatesExcel,
   fetchCandidates,
   parseExcelFile,
   parseImportData,
@@ -42,7 +44,23 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
   const [result, setResult] = useState<{ created: number; updated: number; skipped: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [parsingFile, setParsingFile] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExport = async () => {
+    setExporting(true);
+    setExportMessage(null);
+    try {
+      const count = await downloadCandidatesExcel();
+      setExportMessage({ text: count ? `Exported ${count} candidate records to Excel.` : 'No candidate records are available to export.' });
+    } catch (error) {
+      console.error('Candidate export failed:', error);
+      setExportMessage({ text: 'Could not export candidates. Please try again.', error: true });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const handleParse = async () => {
     setLoading(true);
@@ -121,7 +139,19 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
       <PageHeader
         title="Smart Importer"
         subtitle="Upload Excel/CSV files or paste raw data — we'll auto-detect columns and handle duplicates."
+        action={
+          <Button type="button" variant="secondary" onClick={handleExport} loading={exporting}>
+            <Download size={16} aria-hidden="true" />
+            Export candidates (.xlsx)
+          </Button>
+        }
       />
+
+      {exportMessage && (
+        <p role={exportMessage.error ? 'alert' : 'status'} className={`mb-4 text-sm ${exportMessage.error ? 'text-danger-600' : 'text-pink-700'}`}>
+          {exportMessage.text}
+        </p>
+      )}
 
       {parsingFile && (
         <div className="fixed inset-0 z-[95] flex items-center justify-center bg-pink-950/20 backdrop-blur-sm pointer-events-auto">
