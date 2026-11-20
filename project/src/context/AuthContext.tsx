@@ -10,8 +10,10 @@ interface AuthContextValue {
   profile: Profile | null;
   isAdmin: boolean;
   loading: boolean;
+  isPasswordRecovery: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
+  updatePassword: (password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -21,6 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   const loadProfile = async () => {
     try {
@@ -44,7 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initialize();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true);
+      }
+
       (async () => {
         setSession(newSession);
         if (newSession) {
@@ -86,6 +93,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
+  const updatePassword = async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (!error) {
+      setIsPasswordRecovery(false);
+    }
+    return { error: error?.message ?? null };
+  };
+
   const signOut = async () => {
     if (session?.user?.email) {
       try {
@@ -97,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
+    setIsPasswordRecovery(false);
   };
 
   const isAdmin = profile?.role === 'admin';
@@ -106,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const effectiveIsAdmin = isAdmin || isDesignatedAdmin;
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, isAdmin: effectiveIsAdmin, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, isAdmin: effectiveIsAdmin, loading, isPasswordRecovery, signIn, signUp, updatePassword, signOut }}>
       {children}
     </AuthContext.Provider>
   );

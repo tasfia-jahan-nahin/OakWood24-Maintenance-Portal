@@ -17,7 +17,7 @@ import { Spinner } from '@/components/ui/EmptyState';
 import { StatusPopup } from '@/components/StatusPopup';
 
 function AppContent() {
-  const { session, loading, isAdmin } = useAuth();
+  const { session, loading, isAdmin, isPasswordRecovery } = useAuth();
   const [page, setPage] = useState<PageKey>(() =>
     window.location.pathname === '/list' ? 'list' : 'dashboard',
   );
@@ -41,6 +41,10 @@ function AppContent() {
         <Spinner className="w-8 h-8" />
       </div>
     );
+  }
+
+  if (isPasswordRecovery) {
+    return <AuthPage />;
   }
 
   if (!session) {

@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/Input';
 import { supabase } from '@/lib/supabase';
 
 export function AuthPage() {
-  const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const { signIn, signUp, isPasswordRecovery, updatePassword } = useAuth();
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
@@ -17,27 +17,55 @@ export function AuthPage() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent) => {
-  e.preventDefault();
-  setError(null);
-  setSuccess(null);
-  setLoading(true);
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    setLoading(true);
 
-  if (mode === 'signin') {
-    const { error: err } = await signIn(email, password);
-    if (err) {
-      setError(err);
+    try {
+      if (mode === 'signin') {
+        const { error: err } = await signIn(email, password);
+        if (err) setError(err);
+      } else if (mode === 'signup') {
+        const { error: err } = await signUp(email, password);
+        if (err) {
+          setError(err);
+        } else {
+          setSuccess('Account created! You can now sign in.');
+          setMode('signin');
+        }
+      } else {
+        const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin,
+        });
+        if (err) {
+          setError(err.message);
+        } else {
+          setSuccess('If an account exists for this email, a password reset link is on its way.');
+        }
+      }
+    } finally {
+      setLoading(false);
     }
-  } else {
-    const { error: err } = await signUp(email, password);
-    if (err) {
-      setError(err);
-    } else {
-      setSuccess('Account created! You can now sign in.');
-      setMode('signin');
+  };
+
+  const handlePasswordRecovery = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    setLoading(true);
+
+    try {
+      const { error: err } = await updatePassword(password);
+      if (err) {
+        setError(err);
+      } else {
+        setSuccess('Password updated successfully.');
+      }
+    } finally {
+      setLoading(false);
     }
-  }
-  setLoading(false);
-};
+  };
 
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 sm:p-6 overflow-hidden bg-gradient-to-br from-pink-100 via-rose-50 to-pink-200">
@@ -60,88 +88,109 @@ export function AuthPage() {
 
           {/* Form heading */}
           <h2 className="text-2xl font-bold text-pink-900 mb-1 text-center">
-            {mode === 'signin' ? 'Welcome back' : 'Create your account'}
+            {isPasswordRecovery
+              ? 'Set a new password'
+              : mode === 'signin'
+                ? 'Welcome back'
+                : mode === 'signup'
+                  ? 'Create your account'
+                  : 'Reset your password'}
           </h2>
           <p className="text-sm text-pink-500 mb-6 text-center">
-            {mode === 'signin'
-              ? 'Sign in to manage your compliance pipeline'
-              : 'Start tracking your maintenance team in minutes'}
+            {isPasswordRecovery
+              ? 'Choose a new password for your account'
+              : mode === 'signin'
+                ? 'Sign in to manage your compliance pipeline'
+                : mode === 'signup'
+                  ? 'Start tracking your maintenance team in minutes'
+                  : 'Enter your email and we’ll send you a password reset link'}
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              id="email"
-              type="email"
-              label="Username or Email"
-              placeholder="you@oakwood24.com"
-              icon={<Mail size={16} />}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-            />
+          <form onSubmit={isPasswordRecovery ? handlePasswordRecovery : handleSubmit} className="space-y-4">
+            {!isPasswordRecovery && (
+              <Input
+                id="email"
+                type="email"
+                label="Email"
+                placeholder="you@oakwood24.com"
+                icon={<Mail size={16} />}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+              />
+            )}
 
-            <div>
-              <label htmlFor="password" className="block mb-1.5 text-sm font-medium text-pink-800">
-                Password
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-pink-400">
-                  <Lock size={16} />
-                </span>
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={6}
-                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                  className="w-full h-11 rounded-xl border border-pink-200 bg-white/70 pl-10 pr-10 text-sm text-pink-900 placeholder:text-pink-300 transition-all-soft focus:outline-none focus:ring-2 focus:ring-pink-300/40 focus:border-pink-300"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((s) => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-pink-400 hover:text-pink-600 transition-colors"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
+            {(isPasswordRecovery || mode !== 'forgot') && (
+              <div>
+                <label htmlFor="password" className="block mb-1.5 text-sm font-medium text-pink-800">
+                  {isPasswordRecovery ? 'New password' : 'Password'}
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-pink-400">
+                    <Lock size={16} />
+                  </span>
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="At least 6 characters"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    autoComplete={mode === 'signin' && !isPasswordRecovery ? 'current-password' : 'new-password'}
+                    className="w-full h-11 rounded-xl border border-pink-200 bg-white/70 pl-10 pr-10 text-sm text-pink-900 placeholder:text-pink-300 transition-all-soft focus:outline-none focus:ring-2 focus:ring-pink-300/40 focus:border-pink-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-pink-400 hover:text-pink-600 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Remember me + forgot password */}
-            <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none group">
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={remember}
-                    onChange={(e) => setRemember(e.target.checked)}
-                    className="peer sr-only"
-                  />
-                  <div className="w-5 h-5 rounded-md border-2 border-pink-300 bg-white/60 peer-checked:bg-pink-500 peer-checked:border-pink-500 transition-all-soft flex items-center justify-center">
-                    {remember && (
-                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
+            {!isPasswordRecovery && mode !== 'forgot' && (
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none group">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={remember}
+                      onChange={(e) => setRemember(e.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <div className="w-5 h-5 rounded-md border-2 border-pink-300 bg-white/60 peer-checked:bg-pink-500 peer-checked:border-pink-500 transition-all-soft flex items-center justify-center">
+                      {remember && (
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <span className="text-sm text-pink-600 font-medium group-hover:text-pink-800 transition-colors">
-                  Remember me
-                </span>
-              </label>
-              {mode === 'signin' && (
-                <button
-                  type="button"
-                  className="text-sm text-pink-500 hover:text-pink-700 font-medium transition-colors"
-                >
-                  Forgot password?
-                </button>
-              )}
-            </div>
+                  <span className="text-sm text-pink-600 font-medium group-hover:text-pink-800 transition-colors">
+                    Remember me
+                  </span>
+                </label>
+                {mode === 'signin' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('forgot');
+                      setError(null);
+                      setSuccess(null);
+                    }}
+                    className="text-sm text-pink-500 hover:text-pink-700 font-medium transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </div>
+            )}
 
             {error && (
               <div className="rounded-xl bg-danger-50 border border-danger-500/20 px-4 py-3 text-sm text-danger-600 animate-fade-in-down">
@@ -155,40 +204,60 @@ export function AuthPage() {
             )}
 
             <Button type="submit" size="lg" loading={loading} className="w-full mt-2">
-              {mode === 'signin' ? 'Login' : 'Create account'}
+              {isPasswordRecovery
+                ? 'Update password'
+                : mode === 'signin'
+                  ? 'Login'
+                  : mode === 'signup'
+                    ? 'Create account'
+                    : 'Send reset link'}
             </Button>
           </form>
 
           {/* Toggle sign in / sign up */}
-          <div className="mt-6 text-center text-sm text-pink-500">
-            {mode === 'signin' ? (
-              <>
-                Don't have an account?{' '}
+          {!isPasswordRecovery && (
+            <div className="mt-6 text-center text-sm text-pink-500">
+              {mode === 'signin' ? (
+                <>
+                  Don't have an account?{' '}
+                  <button
+                    onClick={() => {
+                      setMode('signup');
+                      setError(null);
+                    }}
+                    className="font-semibold text-pink-700 hover:text-pink-800 transition-colors"
+                  >
+                    Sign up
+                  </button>
+                </>
+              ) : mode === 'signup' ? (
+                <>
+                  Already have an account?{' '}
+                  <button
+                    onClick={() => {
+                      setMode('signin');
+                      setError(null);
+                    }}
+                    className="font-semibold text-pink-700 hover:text-pink-800 transition-colors"
+                  >
+                    Sign in
+                  </button>
+                </>
+              ) : (
                 <button
-                  onClick={() => {
-                    setMode('signup');
-                    setError(null);
-                  }}
-                  className="font-semibold text-pink-700 hover:text-pink-800 transition-colors"
-                >
-                  Sign up
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{' '}
-                <button
+                  type="button"
                   onClick={() => {
                     setMode('signin');
                     setError(null);
+                    setSuccess(null);
                   }}
                   className="font-semibold text-pink-700 hover:text-pink-800 transition-colors"
                 >
-                  Sign in
+                  Back to sign in
                 </button>
-              </>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Tagline */}
