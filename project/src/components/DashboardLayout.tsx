@@ -3,6 +3,7 @@ import {
   BarChart3,
   Ban,
   Building2,
+  ClipboardCheck,
   HeartPulse,
   History,
   LayoutDashboard,
@@ -11,7 +12,6 @@ import {
   Menu,
   Settings,
   Upload,
-  UserCircle,
   Users,
   Zap,
   X,
@@ -24,6 +24,7 @@ export type PageKey =
   | 'list'
   | 'import'
   | 'edit-candidate'
+  | 'training-check'
   | 'chase-centre'
   | 'do-not-book'
   | 'history'
@@ -42,7 +43,7 @@ const navItems: { key: PageKey; label: string; icon: typeof LayoutDashboard; adm
   { key: 'candidates', label: 'Candidates', icon: Users },
   { key: 'list', label: 'List', icon: List },
   { key: 'import', label: 'Import', icon: Upload },
-  { key: 'edit-candidate', label: 'Edit Candidate', icon: UserCircle },
+  { key: 'training-check', label: 'Training Check', icon: ClipboardCheck },
   { key: 'chase-centre', label: 'Chase Centre', icon: Zap },
   { key: 'do-not-book', label: 'Do Not Book', icon: Ban },
   { key: 'history', label: 'Audit History', icon: History },
@@ -106,7 +107,9 @@ export function DashboardLayout({ current, onNavigate, children }: LayoutProps) 
             <div className="hidden sm:flex items-center gap-2 text-sm text-pink-400">
               <span className="font-medium text-pink-600">Oakwood24</span>
               <span>/</span>
-              <span className="font-semibold text-pink-800">{navItems.find((n) => n.key === current)?.label ?? current}</span>
+              <span className="font-semibold text-pink-800">
+                {current === 'edit-candidate' ? 'Edit Candidate' : navItems.find((n) => n.key === current)?.label ?? current}
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-3">

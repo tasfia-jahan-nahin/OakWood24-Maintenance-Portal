@@ -13,6 +13,7 @@ import { HistoryPage } from '@/pages/HistoryPage';
 import { ReportsPage } from '@/pages/ReportsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { SitesPage } from '@/pages/SitesPage';
+import { TrainingCheckPage } from '@/pages/TrainingCheckPage';
 import { Spinner } from '@/components/ui/EmptyState';
 import { StatusPopup } from '@/components/StatusPopup';
 
@@ -81,6 +82,7 @@ function AppContent() {
           <CandidatesPage onSelectCandidate={handleSelectCandidate} onEdit={handleEditCandidate} />
         ))}
       {page === 'import' && <ImportPage onNavigate={handleNavigate} />}
+      {page === 'training-check' && <TrainingCheckPage />}
       {page === 'edit-candidate' && (
         <CandidateDetailPage
           candidateId={editCandidateId ?? selectedCandidateId ?? ''}
