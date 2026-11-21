@@ -18,7 +18,7 @@ import {
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Input, Select } from '@/components/ui/Input';
+import { Input, Select, Textarea } from '@/components/ui/Input';
 import { EmptyState, Spinner } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { showStatusPopup } from '@/components/StatusPopup';
@@ -48,7 +48,9 @@ import {
   DOCUMENT_TYPE_LABELS,
   STATUS_LABELS,
 } from '@/types';
-import { getDocumentRemark, isFollowUpField } from '@/lib/candidateFollowUp';
+import { documentRemarkField, getDocumentRemark, isFollowUpField } from '@/lib/candidateFollowUp';
+
+const documentOptions = Object.entries(DOCUMENT_TYPE_LABELS) as [DocumentType, string][];
 
 type EditField =
   | 'dbs_expiry_date' | 'passport_expiry_date' | 'rtw_expiry_date'
@@ -72,6 +74,9 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
   const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [remarkEdit, setRemarkEdit] = useState<{ document: DocumentType; text: string } | null>(null);
+  const [remarkSaving, setRemarkSaving] = useState(false);
+  const [remarkError, setRemarkError] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -112,9 +117,38 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
     onBack();
   };
 
-  const documentRemarks = (Object.entries(DOCUMENT_TYPE_LABELS) as [DocumentType, string][])
-    .map(([type, label]) => ({ label, remark: getDocumentRemark(candidate, type) }))
+  const documentRemarks = documentOptions
+    .map(([type, label]) => ({ type, label, remark: getDocumentRemark(candidate, type) }))
     .filter(({ remark }) => remark);
+
+  const selectRemarkDocument = (document: DocumentType) => {
+    setRemarkError('');
+    setRemarkEdit({ document, text: getDocumentRemark(candidate, document) });
+  };
+
+  const saveDocumentRemark = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!remarkEdit || remarkSaving) return;
+    const text = remarkEdit.text.trim();
+    if (text === getDocumentRemark(candidate, remarkEdit.document)) {
+      setRemarkEdit(null);
+      return;
+    }
+    setRemarkSaving(true);
+    setRemarkError('');
+    try {
+      const updated = await updateCandidate(candidate.id, {
+        extra_data: { [documentRemarkField(remarkEdit.document)]: text },
+      }, candidate.full_name);
+      setCandidates((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
+      setRemarkEdit(null);
+    } catch (error) {
+      console.error(error);
+      setRemarkError('Could not save the remark. Please try again.');
+    } finally {
+      setRemarkSaving(false);
+    }
+  };
 
   const handleQuickStatus = async (status: CandidateStatus) => {
     setActionLoading(true);
@@ -270,7 +304,13 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
       </Card>
 
       <Card className="mb-6">
-        <CardHeader><CardTitle>Document Remarks</CardTitle></CardHeader>
+        <CardHeader className="flex items-center justify-between gap-3">
+          <CardTitle>Document Remarks</CardTitle>
+          <Button type="button" variant="outline" size="sm" aria-label="Edit document remarks"
+            onClick={() => selectRemarkDocument(documentRemarks[0]?.type ?? documentOptions[0][0])}>
+            <Pencil size={14} aria-hidden="true" /> Edit
+          </Button>
+        </CardHeader>
         <CardBody>
           {documentRemarks.length > 0 ? (
             <dl className="space-y-2 text-sm">
@@ -284,6 +324,26 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
           ) : <p className="text-sm text-pink-500">No document remarks yet.</p>}
         </CardBody>
       </Card>
+
+      <Modal open={remarkEdit !== null} title="Edit document remark" size="sm"
+        onClose={() => { if (!remarkSaving) setRemarkEdit(null); }}>
+        {remarkEdit && (
+          <form onSubmit={saveDocumentRemark} className="space-y-4">
+            <Select id="remark-document" label="Document" value={remarkEdit.document} disabled={remarkSaving}
+              onChange={(event) => selectRemarkDocument(event.target.value as DocumentType)}>
+              {documentOptions.map(([type, label]) => <option key={type} value={type}>{label}</option>)}
+            </Select>
+            <Textarea id="remark-text" label="Remark" rows={3} placeholder="Leave blank to clear the remark"
+              value={remarkEdit.text} disabled={remarkSaving}
+              onChange={(event) => setRemarkEdit({ ...remarkEdit, text: event.target.value })} />
+            {remarkError && <p role="alert" className="text-sm text-danger-600">{remarkError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" disabled={remarkSaving} onClick={() => setRemarkEdit(null)}>Cancel</Button>
+              <Button type="submit" loading={remarkSaving}>Save remark</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {/* Compliance items */}
       <Card>
