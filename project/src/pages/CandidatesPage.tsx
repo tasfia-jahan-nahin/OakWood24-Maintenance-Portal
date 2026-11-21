@@ -158,11 +158,7 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
   const handleQuickStatus = async (candidate: CandidateWithExpiry, status: CandidateStatus) => {
     setActionLoading(candidate.id);
     try {
-      const remark = status === 'inactive' ? 'Goodbye Email Sent' : null;
-      await updateCandidate(candidate.id, {
-        status,
-        remark: remark ?? candidate.remark,
-      }, candidate.full_name);
+      await updateCandidate(candidate.id, { status }, candidate.full_name);
       if (status === 'active') showStatusPopup('active', candidate.full_name);
       else if (status === 'inactive') showStatusPopup('inactive', candidate.full_name);
       await load();

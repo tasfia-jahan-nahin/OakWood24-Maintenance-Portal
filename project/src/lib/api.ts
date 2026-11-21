@@ -273,34 +273,50 @@ export async function updateCandidate(
   id: string,
   input: Partial<CandidateInput>,
   candidateName?: string,
+  expectedExpiry?: { field: (typeof DOCUMENT_TYPE_TO_FIELD)[DocumentType]; value: string },
 ): Promise<Candidate> {
   const updateData: Record<string, unknown> = { ...input };
   if (input.remark !== undefined) {
     updateData.goodbye_email_sent = (input.remark ?? '').toLowerCase().includes('goodbye email sent');
   }
-  const { data: existing } = await supabase
+  const { data: existing, error: readError } = await supabase
     .from('candidates')
     .select('*')
     .eq('id', id)
-    .maybeSingle();
+    .single();
+  if (readError) throw readError;
+  if (expectedExpiry && normalizeCandidate(existing)[expectedExpiry.field] !== expectedExpiry.value) {
+    throw new Error('This document’s expiry date has changed. Refresh the page and try again.');
+  }
 
+  const hasCosColumn = Object.hasOwn(existing, 'cos_expiry_date');
+  const writesExtraData = input.extra_data !== undefined || input.cos_expiry_date !== undefined;
   const candidateUpdateData = moveCosExpiryToExtraData(
     updateData,
     (existing?.extra_data as Record<string, unknown> | null | undefined) ?? null,
   );
-  let result = await supabase
-    .from('candidates')
-    .update(candidateUpdateData)
-    .eq('id', id)
-    .select()
-    .single();
+  if (!writesExtraData) delete candidateUpdateData.extra_data;
+  if (hasCosColumn && input.cos_expiry_date !== undefined) {
+    candidateUpdateData.cos_expiry_date = input.cos_expiry_date;
+  }
+
+  const save = (payload: Record<string, unknown>) => {
+    let query = supabase.from('candidates').update(payload).eq('id', id);
+    if (expectedExpiry) query = query.eq('updated_at', existing.updated_at);
+    if (Object.hasOwn(payload, 'extra_data')) {
+      query = existing.extra_data === null
+        ? query.is('extra_data', null)
+        : query.eq('extra_data', JSON.stringify(existing.extra_data));
+    }
+    return query.select().single();
+  };
+  let result = await save(candidateUpdateData);
   if (result.error) {
-    result = await supabase
-      .from('candidates')
-      .update(buildFallbackCandidatePayload(candidateUpdateData))
-      .eq('id', id)
-      .select()
-      .single();
+    const fallback = buildFallbackCandidatePayload(candidateUpdateData, existing.extra_data);
+    if (hasCosColumn && input.cos_expiry_date !== undefined) {
+      fallback.cos_expiry_date = input.cos_expiry_date;
+    }
+    result = await save(fallback);
   }
   if (result.error) throw result.error;
   const { data } = result;

@@ -38,14 +38,17 @@ import {
   type CandidateStatus,
   type CandidateWithExpiry,
   type ComplianceDateField,
+  type DocumentType,
   type ReminderSettings,
 } from '@/types';
 import {
   CANDIDATE_STATUSES,
   COMPLIANCE_DATE_FIELDS,
   COMPLIANCE_DATE_LABELS,
+  DOCUMENT_TYPE_LABELS,
   STATUS_LABELS,
 } from '@/types';
+import { getDocumentRemark, isFollowUpField } from '@/lib/candidateFollowUp';
 
 type EditField =
   | 'dbs_expiry_date' | 'passport_expiry_date' | 'rtw_expiry_date'
@@ -109,11 +112,14 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
     onBack();
   };
 
+  const documentRemarks = (Object.entries(DOCUMENT_TYPE_LABELS) as [DocumentType, string][])
+    .map(([type, label]) => ({ label, remark: getDocumentRemark(candidate, type) }))
+    .filter(({ remark }) => remark);
+
   const handleQuickStatus = async (status: CandidateStatus) => {
     setActionLoading(true);
     try {
-      const remark = status === 'inactive' ? 'Goodbye Email Sent' : candidate.remark;
-      await updateCandidate(candidate.id, { status, remark }, candidate.full_name);
+      await updateCandidate(candidate.id, { status }, candidate.full_name);
       if (status === 'active') showStatusPopup('active', candidate.full_name);
       else if (status === 'inactive') showStatusPopup('inactive', candidate.full_name);
       await load();
@@ -213,7 +219,7 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
               {/* Extra data from Excel */}
               {candidate.extra_data && Object.keys(candidate.extra_data).length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {Object.entries(candidate.extra_data).map(([key, val]) => (
+                  {Object.entries(candidate.extra_data).filter(([key]) => !isFollowUpField(key)).map(([key, val]) => (
                     <span key={key} className="text-xs text-pink-500 bg-cream-100 px-2 py-1 rounded-lg">
                       <span className="font-medium">{key}:</span> {val}
                     </span>
@@ -260,6 +266,22 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
               </Button>
             </div>
           )}
+        </CardBody>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader><CardTitle>Document Remarks</CardTitle></CardHeader>
+        <CardBody>
+          {documentRemarks.length > 0 ? (
+            <dl className="space-y-2 text-sm">
+              {documentRemarks.map(({ label, remark }) => (
+                <div key={label}>
+                  <dt className="font-semibold text-pink-900">{label}</dt>
+                  <dd className="whitespace-pre-wrap break-words text-pink-700">{remark}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : <p className="text-sm text-pink-500">No document remarks yet.</p>}
         </CardBody>
       </Card>
 

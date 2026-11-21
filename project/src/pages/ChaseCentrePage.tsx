@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Clock,
   Mail,
+  MessageSquare,
   Phone,
   Send,
   Zap,
@@ -14,6 +15,8 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, PageHeader, Spinner } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
+import { Input, Textarea } from '@/components/ui/Input';
+import { documentRemarkField, getDocumentRemark } from '@/lib/candidateFollowUp';
 import { SkeletonCard } from '@/components/PinkPixel';
 import {
   addChaseAction,
@@ -23,6 +26,7 @@ import {
   fetchChaseActions,
   fetchReminderSettings,
   getRegularChasingCandidates,
+  updateCandidate,
 } from '@/lib/api';
 import {
   type ChaseAction,
@@ -48,11 +52,12 @@ export function ChaseCentrePage({ onEdit }: Props) {
   const [tab, setTab] = useState<Tab>('all');
   const [tier, setTier] = useState<Tier>('all');
   const [actioning, setActioning] = useState<string | null>(null);
-  const [receivedTarget, setReceivedTarget] = useState<ChaseCandidateItem | null>(null);
-  const [receivedSaving, setReceivedSaving] = useState(false);
+  const [documentEdit, setDocumentEdit] = useState<{ item: ChaseCandidateItem; kind: 'received' | 'remark' } | null>(null);
+  const [documentValue, setDocumentValue] = useState('');
+  const [documentSaving, setDocumentSaving] = useState(false);
+  const [documentError, setDocumentError] = useState('');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [chaseActions, setChaseActions] = useState<ChaseActionEntry[]>([]);
-  const [optimisticallyReceived, setOptimisticallyReceived] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -76,10 +81,8 @@ export function ChaseCentrePage({ onEdit }: Props) {
   }, [load]);
 
   const items = useMemo(
-    () => getRegularChasingCandidates(candidates, chaseActions, tab, tier).filter(
-      (item) => !optimisticallyReceived.has(`${item.candidate.id}:${item.documentType}:${item.expiryDate}`),
-    ),
-    [candidates, chaseActions, optimisticallyReceived, tab, tier],
+    () => getRegularChasingCandidates(candidates, chaseActions, tab, tier),
+    [candidates, chaseActions, tab, tier],
   );
 
   const firstWarningCount = useMemo(
@@ -119,42 +122,52 @@ export function ChaseCentrePage({ onEdit }: Props) {
     }
   };
 
-  const handleReceivedClick = (item: ChaseCandidateItem) => {
-    setReceivedTarget(item);
+  const openDocumentEdit = (item: ChaseCandidateItem, kind: 'received' | 'remark') => {
+    setDocumentEdit({ item, kind });
+    setDocumentValue(kind === 'remark' ? getDocumentRemark(item.candidate, item.documentType) : '');
+    setDocumentError('');
     setSuccessMessage(null);
   };
 
-  const handleConfirmReceived = async () => {
-    if (!receivedTarget) return;
-    const receivedKey = `${receivedTarget.candidate.id}:${receivedTarget.documentType}:${receivedTarget.expiryDate}`;
-    setOptimisticallyReceived((current) => new Set(current).add(receivedKey));
-    setReceivedSaving(true);
-    try {
-      await addChaseAction(
-        receivedTarget.candidate.id,
-        receivedTarget.documentType,
-        'completed',
-        'Received',
-        receivedTarget.expiryDate,
-      );
-      setCandidates((current) => current.filter((candidate) => candidate.id !== receivedTarget.candidate.id));
-      await load();
-      setSuccessMessage(`${receivedTarget.candidate.full_name}'s ${DOCUMENT_TYPE_LABELS[receivedTarget.documentType]} was marked Received.`);
-      setReceivedTarget(null);
-    } catch (err) {
-      setOptimisticallyReceived((current) => {
-        const next = new Set(current);
-        next.delete(receivedKey);
-        return next;
-      });
-      console.error(err);
-    } finally {
-      setReceivedSaving(false);
+  const saveDocumentEdit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!documentEdit || documentSaving) return;
+    const { item, kind } = documentEdit;
+    const { candidate, documentType, expiryDate } = item;
+    const value = documentValue.trim();
+    if (kind === 'received' && (!value || value === expiryDate)) {
+      setDocumentError('Enter a new expiry date different from the current date.');
+      return;
     }
-  };
-
-  const closeReceivedModal = () => {
-    setReceivedTarget(null);
+    setDocumentError('');
+    setDocumentSaving(true);
+    try {
+      const field = DOCUMENT_TYPE_TO_FIELD[documentType];
+      const updated = await updateCandidate(candidate.id, kind === 'received'
+        ? { [field]: value }
+        : { extra_data: { [documentRemarkField(documentType)]: value } },
+      candidate.full_name, kind === 'received' ? { field, value: expiryDate } : undefined);
+      setCandidates((current) => enrichCandidates(
+        current.map((existing) => existing.id === updated.id ? updated : existing), settings,
+      ));
+      if (kind === 'received') {
+        try {
+          await addChaseAction(candidate.id, documentType, 'completed', 'Received', expiryDate);
+          setSuccessMessage(`${DOCUMENT_TYPE_LABELS[documentType]} was marked Received and its expiry date was updated.`);
+        } catch (error) {
+          console.error(error);
+          setSuccessMessage('The expiry date was saved, but the Received entry could not be recorded in chase history.');
+        }
+      } else {
+        setSuccessMessage(value ? 'Document remark saved.' : 'Document remark cleared.');
+      }
+      setDocumentEdit(null);
+    } catch (error) {
+      console.error(error);
+      setDocumentError(error instanceof Error ? error.message : 'Could not save this change. Refresh the page and try again.');
+    } finally {
+      setDocumentSaving(false);
+    }
   };
 
   if (loading) {
@@ -269,7 +282,6 @@ export function ChaseCentrePage({ onEdit }: Props) {
             const latestActionLabel = latestAction
               ? `${latestAction.action.replace('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase())}${latestAction.expiry_date ? ` (${new Date(latestAction.expiry_date).toLocaleDateString('en-GB')})` : ''}`
               : 'No chase history yet';
-            const actionKey = `${candidate.id}:${documentType}:received`;
 
             return (
               <Card key={`${candidate.id}-${documentType}-${expiryDate}`} className={`animate-fade-in-up stagger-${Math.min(i + 1, 6)} ${
@@ -349,7 +361,10 @@ export function ChaseCentrePage({ onEdit }: Props) {
                     <Button size="sm" variant="outline" loading={actioning === `${candidate.id}:${documentType}:waiting`} onClick={() => handleAction(candidate.id, documentType, 'waiting')}>
                       <Clock size={14} /> Waiting
                     </Button>
-                    <Button size="sm" variant="primary" loading={receivedSaving && receivedTarget?.candidate.id === candidate.id && receivedTarget.documentType === documentType} onClick={() => handleReceivedClick(item)}>
+                    <Button size="sm" variant="outline" onClick={() => openDocumentEdit(item, 'remark')}>
+                      <MessageSquare size={14} /> Remark
+                    </Button>
+                    <Button size="sm" variant="primary" onClick={() => openDocumentEdit(item, 'received')}>
                       <CheckCircle2 size={14} /> Received
                     </Button>
                   </div>
@@ -361,25 +376,30 @@ export function ChaseCentrePage({ onEdit }: Props) {
       )}
 
       <Modal
-        open={!!receivedTarget}
-        onClose={closeReceivedModal}
-        title="Confirm Received"
+        open={!!documentEdit}
+        onClose={() => { if (!documentSaving) setDocumentEdit(null); }}
+        title={documentEdit?.kind === 'received' ? 'Enter new expiry date' : 'Document remark'}
         size="sm"
       >
-        <div className="space-y-4">
-          <p className="text-sm text-pink-600">
-            Mark <span className="font-semibold">{receivedTarget?.candidate.full_name}</span>'s <span className="font-semibold">{receivedTarget ? DOCUMENT_TYPE_LABELS[receivedTarget.documentType] : ''}</span> as Received?
-          </p>
-          <p className="text-sm text-pink-500">
-            This will persist a Received action for <strong>{receivedTarget?.expiryDate}</strong> and remove this item from Regular Chasing.
-          </p>
+        <form className="space-y-4" onSubmit={saveDocumentEdit}>
+          {documentEdit && <p className="text-sm text-pink-600">
+            {documentEdit.item.candidate.full_name} · {DOCUMENT_TYPE_LABELS[documentEdit.item.documentType]}
+          </p>}
+          {documentEdit?.kind === 'received' ? (
+            <Input id="new-expiry" label="New expiry date" type="date" required
+              value={documentValue} disabled={documentSaving} onChange={(event) => setDocumentValue(event.target.value)} />
+          ) : (
+            <Textarea id="document-remark" label="Remark" rows={3}
+              value={documentValue} disabled={documentSaving} onChange={(event) => setDocumentValue(event.target.value)} />
+          )}
+          {documentError && <p role="alert" className="text-sm text-danger-600">{documentError}</p>}
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={closeReceivedModal}>Cancel</Button>
-            <Button variant="primary" onClick={handleConfirmReceived} loading={receivedSaving}>
-              Confirm Received
+            <Button type="button" variant="ghost" disabled={documentSaving} onClick={() => setDocumentEdit(null)}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={documentSaving}>
+              {documentEdit?.kind === 'received' ? 'Save and mark Received' : 'Save remark'}
             </Button>
           </div>
-        </div>
+        </form>
       </Modal>
     </div>
   );

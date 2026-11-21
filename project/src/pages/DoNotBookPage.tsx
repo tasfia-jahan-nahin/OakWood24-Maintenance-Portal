@@ -2,14 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Ban,
   CheckCircle2,
+  Mail,
   Pencil,
   ShieldCheck,
   XCircle,
 } from 'lucide-react';
-import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
+import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, PageHeader, Spinner } from '@/components/ui/EmptyState';
+import { DNB_EMAIL_FIELD, doNotBookFollowUpKey } from '@/lib/candidateFollowUp';
 import {
   daysUntilExpiry,
   enrichCandidates,
@@ -21,7 +22,6 @@ import {
 import {
   type CandidateWithExpiry,
   type ComplianceDateField,
-  type ReminderSettings,
 } from '@/types';
 import { COMPLIANCE_DATE_FIELDS, COMPLIANCE_DATE_LABELS } from '@/types';
 
@@ -31,15 +31,14 @@ interface Props {
 
 export function DoNotBookPage({ onEdit }: Props) {
   const [candidates, setCandidates] = useState<CandidateWithExpiry[]>([]);
-  const [settings, setSettings] = useState<ReminderSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [resolving, setResolving] = useState<string | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState('');
 
   const load = useCallback(async () => {
     try {
       const [cands, s] = await Promise.all([fetchCandidates(), fetchReminderSettings()]);
       setCandidates(enrichCandidates(cands, s));
-      setSettings(s);
     } catch (err) {
       console.error(err);
     } finally {
@@ -52,23 +51,25 @@ export function DoNotBookPage({ onEdit }: Props) {
   }, [load]);
 
   const dnbCandidates = useMemo(() => getDoNotBookCandidates(candidates), [candidates]);
+  const pending = dnbCandidates.filter((candidate) =>
+    candidate.extra_data?.[DNB_EMAIL_FIELD] !== doNotBookFollowUpKey(candidate),
+  );
 
-  const handleResolve = async (candidate: CandidateWithExpiry) => {
-    setResolving(candidate.id);
+  const handleEmailFollowUp = async (candidate: CandidateWithExpiry) => {
+    setSaving(candidate.id);
+    setSaveError('');
     try {
-      // Clear all expired dates by setting them to null — effectively resolving the DNB flag
-      const update: Record<string, unknown> = {};
-      for (const field of COMPLIANCE_DATE_FIELDS) {
-        if (candidate.expiryStatuses[field] === 'expired') {
-          update[field] = null;
-        }
-      }
-      await updateCandidate(candidate.id, update, candidate.full_name);
-      await load();
+      const updated = await updateCandidate(candidate.id, {
+        extra_data: { [DNB_EMAIL_FIELD]: doNotBookFollowUpKey(candidate) },
+      }, candidate.full_name);
+      setCandidates((current) => current.map((entry) =>
+        entry.id === candidate.id ? { ...entry, extra_data: updated.extra_data } : entry,
+      ));
     } catch (err) {
       console.error(err);
+      setSaveError('Could not record the email follow-up. Please try again.');
     } finally {
-      setResolving(null);
+      setSaving(null);
     }
   };
 
@@ -83,17 +84,18 @@ export function DoNotBookPage({ onEdit }: Props) {
         subtitle="Candidates flagged because documents are expired past the threshold or unverified."
       />
 
-      {dnbCandidates.length === 0 ? (
+      {saveError && <p role="alert" className="mb-4 text-sm text-danger-600">{saveError}</p>}
+      {pending.length === 0 ? (
         <Card>
           <EmptyState
             icon={<CheckCircle2 size={28} />}
-            title="No Do Not Book flags"
-            description="All candidates are compliant. Expired documents past the threshold will appear here."
+            title="No pending Do Not Book follow-ups"
+            description="Candidates stay flagged until their underlying compliance issue is fixed."
           />
         </Card>
       ) : (
         <div className="space-y-3">
-          {dnbCandidates.map((c, i) => {
+          {pending.map((c, i) => {
             const expiredFields = COMPLIANCE_DATE_FIELDS.filter(
               (f) => c.expiryStatuses[f] === 'expired',
             );
@@ -142,8 +144,8 @@ export function DoNotBookPage({ onEdit }: Props) {
                       <Button size="sm" variant="outline" onClick={() => onEdit(c.id)}>
                         <Pencil size={14} /> Edit
                       </Button>
-                      <Button size="sm" variant="primary" loading={resolving === c.id} onClick={() => handleResolve(c)}>
-                        <CheckCircle2 size={14} /> Resolve
+                      <Button size="sm" variant="primary" disabled={saving !== null} loading={saving === c.id} onClick={() => handleEmailFollowUp(c)}>
+                        <Mail size={14} /> Send Email
                       </Button>
                     </div>
                   </div>
