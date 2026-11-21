@@ -753,6 +753,10 @@ const HEADER_ALIASES: Record<string, string[]> = {
     'e-visa',
     'e-visa expiry',
     'e-visa expiry date',
+    'e visa',
+    'e visa expiry',
+    'e visa expiry date',
+    'visa',
     'visa expiry',
     'visa expiry date',
   ],
@@ -908,6 +912,7 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
   for (const { cells, rowNumber } of dataRows) {
     const row: Partial<ParsedImportRow> = { extra_data: {} };
     let rawStatus = '';
+    let hasExplicitEvisa = false;
 
     for (let j = 0; j < headers.length; j++) {
       const field = mapping[j];
@@ -931,7 +936,15 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
         case 'rtw_expiry_date': row.rtw_expiry_date = parseDateValue(value); break;
         case 'pmva_expiry_date': row.pmva_expiry_date = parseDateValue(value); break;
         case 'training_expiry_date': row.training_expiry_date = parseDateValue(value); break;
-        case 'evisa_expiry_date': row.evisa_expiry_date = parseDateValue(value); break;
+        case 'evisa_expiry_date': {
+          const date = parseDateValue(value);
+          const explicit = /^e\s?visa\b/.test(normalizeHeader(headers[j]));
+          if (date && (explicit || !hasExplicitEvisa)) {
+            row.evisa_expiry_date = date;
+            hasExplicitEvisa ||= explicit;
+          }
+          break;
+        }
           case 'cos_expiry_date': row.cos_expiry_date = parseDateValue(value); break;
         case 'proof_of_address_1_expiry': {
           const parsed = parseDateValue(value);
@@ -1054,7 +1067,7 @@ export async function commitImport(
       dbs_expiry_date: p.row.dbs_expiry_date,
       passport_expiry_date: p.row.passport_expiry_date,
       rtw_expiry_date: p.row.rtw_expiry_date,
-      evisa_expiry_date: p.row.evisa_expiry_date,
+      ...(p.row.evisa_expiry_date ? { evisa_expiry_date: p.row.evisa_expiry_date } : {}),
       pmva_expiry_date: p.row.pmva_expiry_date,
       training_expiry_date: p.row.training_expiry_date,
       extra_data: {
