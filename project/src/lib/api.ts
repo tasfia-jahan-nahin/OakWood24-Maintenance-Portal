@@ -1,5 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { readImportRows, spreadsheetRowsToText } from '@/lib/importRows';
+import { getMedComp, MEDCOMP_EXPIRY_FIELD } from '@/lib/medcomp';
+import { portalToday } from '@/lib/monthlyExpirations';
 import type {
   Candidate,
   CandidateInput,
@@ -9,6 +11,7 @@ import type {
   ChaseAction,
   ChaseActionEntry,
   ChaseCandidateItem,
+  ChaseDocumentType,
   ComplianceDateField,
   DocumentType,
   ExpiryStatus,
@@ -279,7 +282,7 @@ export async function updateCandidate(
   id: string,
   input: Partial<CandidateInput>,
   candidateName?: string,
-  expectedExpiry?: { field: (typeof DOCUMENT_TYPE_TO_FIELD)[DocumentType]; value: string },
+  expectedExpiry?: { field: (typeof DOCUMENT_TYPE_TO_FIELD)[DocumentType] | typeof MEDCOMP_EXPIRY_FIELD; value: string },
 ): Promise<Candidate> {
   const updateData: Record<string, unknown> = { ...input };
   if (input.remark !== undefined) {
@@ -291,7 +294,9 @@ export async function updateCandidate(
     .eq('id', id)
     .single();
   if (readError) throw readError;
-  if (expectedExpiry && normalizeCandidate(existing)[expectedExpiry.field] !== expectedExpiry.value) {
+  const currentExpiry = expectedExpiry && (expectedExpiry.field === MEDCOMP_EXPIRY_FIELD
+    ? getMedComp(existing).expiry : normalizeCandidate(existing)[expectedExpiry.field]);
+  if (expectedExpiry && currentExpiry !== expectedExpiry.value) {
     throw new Error('This document’s expiry date has changed. Refresh the page and try again.');
   }
 
@@ -425,7 +430,7 @@ export async function fetchChaseActions(candidateId?: string): Promise<ChaseActi
 
 export async function addChaseAction(
   candidateId: string,
-  documentType: DocumentType,
+  documentType: ChaseDocumentType,
   action: ChaseAction,
   note?: string,
   expiryDate?: string | null,
@@ -1291,12 +1296,13 @@ export function getTrustValue(candidate: Candidate): string | null {
 export function getRegularChasingCandidates(
   candidates: CandidateWithExpiry[],
   chaseActions: ChaseActionEntry[],
-  docType: DocumentType | 'all',
+  docType: ChaseDocumentType | 'all',
   tier: 'first' | 'second' | 'all' = 'all',
 ): ChaseCandidateItem[] {
   const eligibleStatuses: CandidateStatus[] = ['active', 'no_zoho_remark'];
   const fields: DocumentType[] = ['dbs', 'passport', 'rtw', 'evisa', 'cos', 'pmva', 'training'];
   const addressProofFields: DocumentType[] = ['proof_of_address_1', 'proof_of_address_2'];
+  const today = Date.parse(portalToday());
 
   const latestActions = chaseActions.reduce<Record<string, ChaseActionEntry>>((acc, action) => {
     const key = `${action.candidate_id}:${action.document_type}`;
@@ -1311,10 +1317,25 @@ export function getRegularChasingCandidates(
     if (c.goodbye_email_sent) return [];
     if (!eligibleStatuses.includes(c.status)) return [];
 
-    const visibleFields = docType === 'all' ? [...fields, ...addressProofFields] : [docType];
+    const visibleFields = docType === 'all' ? [...fields, ...addressProofFields, 'medcomp' as const] : [docType];
     const bothAddressProofsExpired = isExpired(c.proof_of_address_1_expiry) && isExpired(c.proof_of_address_2_expiry);
 
     return visibleFields.flatMap((field) => {
+      if (field === 'medcomp') {
+        const { expiry } = getMedComp(c);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) return [];
+        const days = (Date.parse(expiry) - today) / 86_400_000;
+        if (!Number.isFinite(days) || days > 30) return [];
+        const warningTier = days <= 7 ? 'second' : 'first';
+        if (tier !== 'all' && tier !== warningTier) return [];
+        if (chaseActions.some((action) => action.action === 'completed' &&
+          action.candidate_id === c.id && action.document_type === field && action.expiry_date === expiry)) return [];
+        return [{
+          candidate: c, documentType: field, expiryDate: expiry,
+          expiryStatus: days < 0 ? 'expired' : 'expiring',
+          warningTier, latestAction: latestActions[`${c.id}:${field}`] ?? null,
+        } satisfies ChaseCandidateItem];
+      }
       if (field === 'proof_of_address_1' || field === 'proof_of_address_2') {
         if (!bothAddressProofsExpired) return [];
 
@@ -1337,7 +1358,6 @@ export function getRegularChasingCandidates(
         return [{
           candidate: c,
           documentType: field,
-          expiryField: DOCUMENT_TYPE_TO_FIELD[field] as ComplianceDateField,
           expiryDate,
           expiryStatus: 'expired',
           warningTier,
@@ -1369,7 +1389,6 @@ export function getRegularChasingCandidates(
       return [{
         candidate: c,
         documentType: field,
-        expiryField: complianceField,
         expiryDate,
         expiryStatus: c.expiryStatuses[complianceField],
         warningTier,
@@ -1408,7 +1427,6 @@ export function getBookingWarningCandidates(
       return [{
         candidate: c,
         documentType: field,
-        expiryField: complianceField,
         expiryDate,
         expiryStatus: c.expiryStatuses[complianceField],
         warningTier,

@@ -38,20 +38,21 @@ import {
   type CandidateStatus,
   type CandidateWithExpiry,
   type ComplianceDateField,
-  type DocumentType,
+  type ChaseDocumentType,
   type ReminderSettings,
 } from '@/types';
 import {
   CANDIDATE_STATUSES,
   COMPLIANCE_DATE_FIELDS,
   COMPLIANCE_DATE_LABELS,
-  DOCUMENT_TYPE_LABELS,
+  CHASE_DOCUMENT_LABELS,
   STATUS_LABELS,
 } from '@/types';
 import { documentRemarkField, getDocumentRemark, isFollowUpField } from '@/lib/candidateFollowUp';
 import { getCandidatePostcode } from '@/lib/candidatePostcode';
+import { getMedComp, medCompFields, MEDCOMP_ROLES, type MedCompAnswer, type MedCompDetails, type MedCompRole } from '@/lib/medcomp';
 
-const documentOptions = Object.entries(DOCUMENT_TYPE_LABELS) as [DocumentType, string][];
+const documentOptions = Object.entries(CHASE_DOCUMENT_LABELS) as [ChaseDocumentType, string][];
 
 type EditField =
   | 'dbs_expiry_date' | 'passport_expiry_date' | 'rtw_expiry_date'
@@ -75,7 +76,10 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
   const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [remarkEdit, setRemarkEdit] = useState<{ document: DocumentType; text: string } | null>(null);
+  const [remarkEdit, setRemarkEdit] = useState<{ document: ChaseDocumentType; text: string } | null>(null);
+  const [roleEdit, setRoleEdit] = useState<MedCompDetails | null>(null);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleError, setRoleError] = useState('');
   const [remarkSaving, setRemarkSaving] = useState(false);
   const [remarkError, setRemarkError] = useState('');
 
@@ -122,10 +126,30 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
     .map(([type, label]) => ({ type, label, remark: getDocumentRemark(candidate, type) }))
     .filter(({ remark }) => remark);
   const postcode = getCandidatePostcode(candidate);
+  const medComp = getMedComp(candidate);
 
-  const selectRemarkDocument = (document: DocumentType) => {
+  const selectRemarkDocument = (document: ChaseDocumentType) => {
     setRemarkError('');
     setRemarkEdit({ document, text: getDocumentRemark(candidate, document) });
+  };
+
+  const saveRole = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!roleEdit || roleSaving) return;
+    const { role, answer, expiry } = roleEdit;
+    if (role && (!answer || (answer === 'yes' && !/^\d{4}-\d{2}-\d{2}$/.test(expiry)))) return;
+    setRoleSaving(true);
+    setRoleError('');
+    try {
+      const updated = await updateCandidate(candidate.id, { extra_data: medCompFields(role, answer, expiry) }, candidate.full_name);
+      setCandidates((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
+      setRoleEdit(null);
+    } catch (error) {
+      console.error(error);
+      setRoleError('Could not save the role or MedComp details. Please try again.');
+    } finally {
+      setRoleSaving(false);
+    }
   };
 
   const saveDocumentRemark = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -210,7 +234,12 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl font-bold text-pink-900">{candidate.full_name}</h1>
+                <h1 className={`text-2xl font-bold ${medComp.answer === 'no' ? 'text-danger-600' : 'text-pink-900'}`}>{candidate.full_name}</h1>
+                <Button type="button" size="sm" variant="outline" aria-label={medComp.role ? `Edit role tag: ${medComp.role}` : 'Add role tag'}
+                  onClick={() => { setRoleError(''); setRoleEdit(medComp); }}>
+                  <Pencil size={13} aria-hidden="true" /> {medComp.role || 'Add role tag'}
+                </Button>
+                {medComp.answer === 'no' && <Badge tone="expired">MedComp missing</Badge>}
                 {candidate.goodbye_email_sent ? (
                   <Badge tone="archived">Archived</Badge>
                 ) : candidate.isDoNotBook ? (
@@ -232,6 +261,7 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
                   </span>
                 )}
                 {postcode && <p className="text-pink-500 text-sm">{postcode}</p>}
+                {medComp.expiry && <p className="text-pink-500 text-sm">MedComp expires {new Date(medComp.expiry).toLocaleDateString('en-GB', { timeZone: 'UTC' })}</p>}
               </div>
               <div className="flex flex-wrap gap-4 mt-3 text-sm text-pink-600">
                 {candidate.email && (
@@ -332,7 +362,7 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
         {remarkEdit && (
           <form onSubmit={saveDocumentRemark} className="space-y-4">
             <Select id="remark-document" label="Document" value={remarkEdit.document} disabled={remarkSaving}
-              onChange={(event) => selectRemarkDocument(event.target.value as DocumentType)}>
+              onChange={(event) => selectRemarkDocument(event.target.value as ChaseDocumentType)}>
               {documentOptions.map(([type, label]) => <option key={type} value={type}>{label}</option>)}
             </Select>
             <Textarea id="remark-text" label="Remark" rows={3} placeholder="Leave blank to clear the remark"
@@ -342,6 +372,36 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" disabled={remarkSaving} onClick={() => setRemarkEdit(null)}>Cancel</Button>
               <Button type="submit" loading={remarkSaving}>Save remark</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      <Modal open={roleEdit !== null} title="Role tag and MedComp" size="sm"
+        onClose={() => { if (!roleSaving) setRoleEdit(null); }}>
+        {roleEdit && (
+          <form onSubmit={saveRole} className="space-y-4">
+            <Select id="candidate-role-tag" label="Role tag" value={roleEdit.role} disabled={roleSaving}
+              onChange={(event) => setRoleEdit({ ...roleEdit, role: event.target.value as MedCompRole | '' })}>
+              <option value="">No role tag</option>
+              {MEDCOMP_ROLES.map((role) => <option key={role}>{role}</option>)}
+            </Select>
+            {roleEdit.role && <Select id="candidate-medcomp-answer" label="Has this candidate completed MedComp?"
+              value={roleEdit.answer} required disabled={roleSaving}
+              onChange={(event) => setRoleEdit({ ...roleEdit, answer: event.target.value as MedCompAnswer | '' })}>
+              <option value="">Choose an answer</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+              <option value="na">N/A</option>
+            </Select>}
+            {roleEdit.role && roleEdit.answer === 'yes' && (
+              <Input id="candidate-medcomp-expiry" label="MedComp expiry date" type="date" required disabled={roleSaving}
+                value={roleEdit.expiry} onChange={(event) => setRoleEdit({ ...roleEdit, expiry: event.target.value })} />
+            )}
+            {roleError && <p role="alert" className="text-sm text-danger-600">{roleError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" disabled={roleSaving} onClick={() => setRoleEdit(null)}>Cancel</Button>
+              <Button type="submit" loading={roleSaving}>Save role</Button>
             </div>
           </form>
         )}

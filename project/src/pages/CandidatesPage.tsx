@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { readImportRows } from '@/lib/importRows';
+import { getMedComp } from '@/lib/medcomp';
 import {
   AlertTriangle,
   Ban,
@@ -486,6 +487,7 @@ function CandidateCard({
   actionLoading: boolean;
 }) {
   const isGoodbye = c.goodbye_email_sent;
+  const medComp = getMedComp(c);
   const isArchived = c.goodbye_email_sent || c.status === 'archived';
   const reminderDays = 30;
 
@@ -501,7 +503,7 @@ function CandidateCard({
           </button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
-              <button onClick={onClick} className="text-sm font-bold text-pink-900 truncate text-left">
+              <button onClick={onClick} className={`text-sm font-bold truncate text-left ${medComp.answer === 'no' ? 'text-danger-600' : 'text-pink-900'}`}>
                 {c.full_name}
               </button>
               {isArchived ? (
@@ -518,7 +520,9 @@ function CandidateCard({
                 <Badge tone="neutral">{STATUS_LABELS[c.status]}</Badge>
               )}
             </div>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              {medComp.role && <Badge tone="pink">{medComp.role}</Badge>}
+              {medComp.answer === 'no' && <Badge tone="expired">MedComp missing</Badge>}
               {c.job_title && (
                 <span className="text-xs font-medium text-pink-600 bg-pink-100 px-2 py-0.5 rounded-full">
                   {c.job_title}

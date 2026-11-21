@@ -15,8 +15,11 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, PageHeader, Spinner } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
+import { NmcPinReminder } from '@/components/NmcPinReminder';
 import { Input, Textarea } from '@/components/ui/Input';
 import { documentRemarkField, getDocumentRemark } from '@/lib/candidateFollowUp';
+import { getMedComp, MEDCOMP_EXPIRY_FIELD } from '@/lib/medcomp';
+import { portalToday } from '@/lib/monthlyExpirations';
 import { SkeletonCard } from '@/components/PinkPixel';
 import {
   addChaseAction,
@@ -33,12 +36,12 @@ import {
   type CandidateWithExpiry,
   type ChaseActionEntry,
   type ChaseCandidateItem,
-  type DocumentType,
+  type ChaseDocumentType,
   type ReminderSettings,
 } from '@/types';
-import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPE_TO_FIELD, STATUS_LABELS } from '@/types';
+import { CHASE_DOCUMENT_LABELS, DOCUMENT_TYPE_TO_FIELD, STATUS_LABELS } from '@/types';
 
-type Tab = DocumentType | 'all';
+type Tab = ChaseDocumentType | 'all';
 type Tier = 'all' | 'first' | 'second';
 
 interface Props {
@@ -96,20 +99,20 @@ export function ChaseCentrePage({ onEdit }: Props) {
 
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: getRegularChasingCandidates(candidates, chaseActions, 'all', tier).length },
-    ...(['dbs', 'passport', 'rtw', 'evisa', 'cos', 'pmva', 'training'] as DocumentType[]).map((t) => ({
+    ...(['dbs', 'passport', 'rtw', 'evisa', 'cos', 'pmva', 'training', 'medcomp'] as const).map((t) => ({
       key: t,
-      label: DOCUMENT_TYPE_LABELS[t],
+      label: CHASE_DOCUMENT_LABELS[t],
       count: getRegularChasingCandidates(candidates, chaseActions, t, tier).length,
     })),
   ];
 
   const tierTabs: { key: Tier; label: string; count: number; tone: string }[] = [
     { key: 'all', label: 'All Warnings', count: getRegularChasingCandidates(candidates, chaseActions, tab, 'all').length, tone: 'pink' },
-    { key: 'first', label: '1st Warning (15d)', count: getRegularChasingCandidates(candidates, chaseActions, tab, 'first').length, tone: 'warning' },
+    { key: 'first', label: '1st Warning', count: getRegularChasingCandidates(candidates, chaseActions, tab, 'first').length, tone: 'warning' },
     { key: 'second', label: '2nd Warning / DNB (7d)', count: getRegularChasingCandidates(candidates, chaseActions, tab, 'second').length, tone: 'danger' },
   ];
 
-  const handleAction = async (candidateId: string, docType: DocumentType, action: ChaseAction) => {
+  const handleAction = async (candidateId: string, docType: ChaseDocumentType, action: ChaseAction) => {
     const actionKey = `${candidateId}:${docType}:${action}`;
     setActioning(actionKey);
     try {
@@ -142,18 +145,18 @@ export function ChaseCentrePage({ onEdit }: Props) {
     setDocumentError('');
     setDocumentSaving(true);
     try {
-      const field = DOCUMENT_TYPE_TO_FIELD[documentType];
-      const updated = await updateCandidate(candidate.id, kind === 'received'
-        ? { [field]: value }
-        : { extra_data: { [documentRemarkField(documentType)]: value } },
-      candidate.full_name, kind === 'received' ? { field, value: expiryDate } : undefined);
+      const field = documentType === 'medcomp' ? MEDCOMP_EXPIRY_FIELD : DOCUMENT_TYPE_TO_FIELD[documentType];
+      const patch = kind === 'remark' ? { extra_data: { [documentRemarkField(documentType)]: value } }
+        : field === MEDCOMP_EXPIRY_FIELD ? { extra_data: { [MEDCOMP_EXPIRY_FIELD]: value } } : { [field]: value };
+      const updated = await updateCandidate(candidate.id, patch, candidate.full_name,
+        kind === 'received' ? { field, value: expiryDate } : undefined);
       setCandidates((current) => enrichCandidates(
         current.map((existing) => existing.id === updated.id ? updated : existing), settings,
       ));
       if (kind === 'received') {
         try {
           await addChaseAction(candidate.id, documentType, 'completed', 'Received', expiryDate);
-          setSuccessMessage(`${DOCUMENT_TYPE_LABELS[documentType]} was marked Received and its expiry date was updated.`);
+          setSuccessMessage(`${CHASE_DOCUMENT_LABELS[documentType]} was marked Received and its expiry date was updated.`);
         } catch (error) {
           console.error(error);
           setSuccessMessage('The expiry date was saved, but the Received entry could not be recorded in chase history.');
@@ -207,7 +210,7 @@ export function ChaseCentrePage({ onEdit }: Props) {
               <Mail size={16} />
             </div>
             <div>
-              <p className="text-xs text-warning-600">1st Warning (15 days)</p>
+              <p className="text-xs text-warning-600">1st Warning</p>
               <p className="text-lg font-bold text-warning-600 tabular-nums">{firstWarningCount}</p>
             </div>
           </div>
@@ -274,9 +277,11 @@ export function ChaseCentrePage({ onEdit }: Props) {
       ) : (
         <div className="space-y-3">
           {items.map((item, i) => {
-            const { candidate, documentType, expiryDate, expiryField, warningTier, latestAction } = item;
-            const days = daysUntilExpiry(expiryDate);
-            const docLabel = DOCUMENT_TYPE_LABELS[documentType];
+            const { candidate, documentType, expiryDate, warningTier, latestAction } = item;
+            const days = documentType === 'medcomp'
+              ? (Date.parse(expiryDate) - Date.parse(portalToday())) / 86_400_000 : daysUntilExpiry(expiryDate);
+            const docLabel = CHASE_DOCUMENT_LABELS[documentType];
+            const medComp = getMedComp(candidate);
             const statusLabel = STATUS_LABELS[candidate.status];
             const statusTone = candidate.status === 'active' ? 'active' : 'pending';
             const latestActionLabel = latestAction
@@ -297,10 +302,11 @@ export function ChaseCentrePage({ onEdit }: Props) {
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => onEdit(candidate.id)} className="text-sm font-semibold text-pink-900 hover:text-pink-700 truncate block text-left">
+                          <button onClick={() => onEdit(candidate.id)} className={`text-sm font-semibold hover:underline truncate block text-left ${medComp.answer === 'no' ? 'text-danger-600' : 'text-pink-900'}`}>
                             {candidate.full_name}
                           </button>
                           <Badge tone={statusTone}>{statusLabel}</Badge>
+                          {medComp.role && <Badge tone="pink">{medComp.role}</Badge>}
                         </div>
                         <div className="flex items-center gap-2 mt-2 flex-wrap">
                           {candidate.job_title && (
@@ -338,14 +344,14 @@ export function ChaseCentrePage({ onEdit }: Props) {
                       <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
                         days <= 7 ? 'bg-rose-100 text-rose-700 border border-rose-500/20' : 'bg-amber-100 text-amber-700 border border-amber-500/20'
                       }`}>
-                        {days === 0 ? 'Expiring today' : `Expiring in ${days} day${days === 1 ? '' : 's'}`}
+                        {days < 0 ? 'Expired' : days === 0 ? 'Expiring today' : `Expiring in ${days} day${days === 1 ? '' : 's'}`}
                       </span>
                     ) : (
                       <Badge tone="neutral">No expiry date</Badge>
                     )}
                     {warningTier !== 'none' && (
                       <Badge tone={warningTier === 'second' ? 'expired' : 'expiring'}>
-                        {warningTier === 'second' ? '2nd Warning / DNB' : '1st Warning'}
+                        {warningTier === 'second' ? (documentType === 'medcomp' ? '2nd Warning' : '2nd Warning / DNB') : '1st Warning'}
                       </Badge>
                     )}
                     <span className="text-xs text-pink-500">Latest: {latestActionLabel}</span>
@@ -383,7 +389,7 @@ export function ChaseCentrePage({ onEdit }: Props) {
       >
         <form className="space-y-4" onSubmit={saveDocumentEdit}>
           {documentEdit && <p className="text-sm text-pink-600">
-            {documentEdit.item.candidate.full_name} · {DOCUMENT_TYPE_LABELS[documentEdit.item.documentType]}
+            {documentEdit.item.candidate.full_name} · {CHASE_DOCUMENT_LABELS[documentEdit.item.documentType]}
           </p>}
           {documentEdit?.kind === 'received' ? (
             <Input id="new-expiry" label="New expiry date" type="date" required
@@ -401,6 +407,7 @@ export function ChaseCentrePage({ onEdit }: Props) {
           </div>
         </form>
       </Modal>
+      <NmcPinReminder />
     </div>
   );
 }

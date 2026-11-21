@@ -3,6 +3,7 @@ export type CandidateStatus = 'active' | 'inactive' | 'no_zoho_remark' | 'pendin
 export type UserRole = 'admin' | 'coordinator';
 
 export type DocumentType = 'dbs' | 'passport' | 'rtw' | 'evisa' | 'cos' | 'pmva' | 'training' | 'proof_of_address_1' | 'proof_of_address_2';
+export type ChaseDocumentType = DocumentType | 'medcomp';
 
 export type ChaseAction = 'email_sent' | 'called' | 'waiting' | 'completed';
 
@@ -71,6 +72,8 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   proof_of_address_1: 'Proof of Address 1',
   proof_of_address_2: 'Proof of Address 2',
 };
+
+export const CHASE_DOCUMENT_LABELS: Record<ChaseDocumentType, string> = { ...DOCUMENT_TYPE_LABELS, medcomp: 'MedComp' };
 
 export interface Profile {
   id: string;
@@ -157,7 +160,7 @@ export interface ChaseActionEntry {
   candidate_id: string;
   user_id: string | null;
   user_email: string | null;
-  document_type: DocumentType;
+  document_type: ChaseDocumentType;
   action: ChaseAction;
   note: string | null;
   expiry_date: string | null;
@@ -166,8 +169,7 @@ export interface ChaseActionEntry {
 
 export interface ChaseCandidateItem {
   candidate: CandidateWithExpiry;
-  documentType: DocumentType;
-  expiryField: ComplianceDateField;
+  documentType: ChaseDocumentType;
   expiryDate: string;
   expiryStatus: ExpiryStatus;
   warningTier: WarningTier;
