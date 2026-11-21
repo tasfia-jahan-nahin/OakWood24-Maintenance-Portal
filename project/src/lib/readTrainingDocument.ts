@@ -11,9 +11,11 @@ export async function readTrainingDocument(file: File): Promise<string> {
     const xml = new DOMParser().parseFromString(strFromU8(archive['word/document.xml']), 'application/xml');
     if (xml.querySelector('parsererror')) throw new Error('Could not read this Word document.');
     const paragraphs = Array.from(xml.getElementsByTagNameNS('*', 'p'));
-    return paragraphs.map((paragraph) =>
-      Array.from(paragraph.getElementsByTagNameNS('*', 't')).map((element) => element.textContent).join(''),
-    ).join('\n');
+    return paragraphs.map((paragraph) => {
+      const text = Array.from(paragraph.getElementsByTagNameNS('*', 't')).map((element) => element.textContent).join('');
+      const listItem = paragraph.getElementsByTagNameNS('*', 'numPr').length > 0;
+      return text.trim() && listItem ? `• ${text}` : text;
+    }).join('\n');
   }
   if (extension === 'pdf') {
     const [pdfjs, { default: workerUrl }] = await Promise.all([

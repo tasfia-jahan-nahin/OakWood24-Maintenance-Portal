@@ -33,34 +33,80 @@ export function splitTrustSites(value: string | null): string[] {
   return [...new Set((value ?? '').split(/[,;\n|]+/).map((site) => site.trim()).filter(Boolean))];
 }
 
+const COURSE_LIST_MARKER = /^(?:[-*•▪◦□✓]+\s*|\d+[.)]\s+)/u;
+
 export function parseCourseLines(text: string): string[] {
   const courses = new Map<string, string>();
   for (const line of text.split(/\r?\n/)) {
-    const course = line.trim().replace(/^(?:[-*•▪◦□✓]+\s*|\d+[.)]\s+)/u, '').trim();
+    const course = line.trim().replace(COURSE_LIST_MARKER, '').trim();
     const key = trainingKey(course);
     if (key && !courses.has(key)) courses.set(key, course);
   }
   return [...courses.values()];
 }
 
+function parseRoleHeading(value: string): TrainingRole | undefined {
+  const heading = trainingKey(value).replace(/^for (?:the )?/, '')
+    .replace(/ (?:mandatory |required )?(?:trainings?|courses?|requirements|roles?)(?: only)?$/, '')
+    .replace(/ only$/, '');
+  if (/^(?:kitchen|kirchen) assistants?(?: s)?$/.test(heading)) return 'Kitchen Assistant';
+  return TRAINING_ROLES.find((role) => trainingKey(role) === heading);
+}
+
 export function findSiteSections(text: string, knownSites: string[]): SiteTraining[] {
   const names = new Map(knownSites.map((name) => [trainingKey(name), name]));
-  const sections = new Map<string, { name: string; lines: string[] }>();
-  let current: string[] | undefined;
-  for (const line of text.split(/\r?\n/)) {
-    const explicit = line.match(/^\s*(?:site|trust|client)\s*:\s*(.+?)\s*$/i);
-    const heading = (explicit?.[1] ?? line).trim().replace(/\s*(?:[-–:]\s*)?(?:mandatory|required) trainings?\s*:?$/i, '');
+  const sections = new Map<string, { site_name: string; role: TrainingRole; lines: string[] }>();
+  let siteName: string | undefined;
+  let role: TrainingRole = 'HCA';
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const addCourse = (line: string) => {
+    if (!siteName) return;
+    const key = trainingListKey(siteName, role);
+    let section = sections.get(key);
+    if (!section) {
+      section = { site_name: siteName, role, lines: [] };
+      sections.set(key, section);
+    }
+    section.lines.push(line);
+  };
+
+  for (const [index, line] of lines.entries()) {
+    const text = line.replace(COURSE_LIST_MARKER, '');
+    const roleLine = text.match(/^role\s*:\s*(.+)$/i)?.[1] ?? text;
+    const [roleHeading, ...roleTail] = roleLine.split(':');
+    const labelledRole = parseRoleHeading(roleHeading);
+    if (labelledRole) {
+      role = labelledRole;
+      if (roleTail.length > 0) addCourse(roleTail.join(':').trim());
+      continue;
+    }
+    if (COURSE_LIST_MARKER.test(line)) {
+      addCourse(line);
+      continue;
+    }
+    const explicit = line.match(/^(?:site|trust|client)\s*:\s*(.+)$/i);
+    const [headingText, ...tail] = (explicit?.[1] ?? line).split(':');
+    const inlineCourse = tail.join(':').trim();
+    if (/^(?:mandatory|required)?\s*trainings?\s*:?$/i.test(line)) continue;
+
+    const headingWithRole = headingText.trim().match(/^(.+?)\s*(?:\(([^)]+)\)|\s+[-–—]\s+(.+))$/);
+    const headingRole = headingWithRole ? parseRoleHeading(headingWithRole[2] ?? headingWithRole[3]) : undefined;
+    const heading = (headingRole && headingWithRole ? headingWithRole[1] : headingText).trim()
+      .replace(/\s*(?:[-–]\s*)?(?:mandatory|required) trainings?\s*$/i, '');
     const key = trainingKey(heading);
-    const siteName = names.get(key) ?? (explicit ? heading : undefined);
-    if (siteName && key) {
-      if (!sections.has(key)) sections.set(key, { name: siteName, lines: [] });
-      current = sections.get(key)?.lines;
-    } else if (!/^(?:mandatory|required)?\s*trainings?\s*:?$/i.test(line.trim())) {
-      current?.push(line);
+    const knownName = names.get(key);
+    const hasListBelow = COURSE_LIST_MARKER.test(lines[index + 1] ?? '');
+    const isHeading = explicit || knownName || line.endsWith(':') || hasListBelow;
+    if (key && isHeading) {
+      siteName = knownName ?? heading;
+      role = headingRole ?? 'HCA';
+      if (inlineCourse) addCourse(inlineCourse);
+    } else {
+      addCourse(line);
     }
   }
-  return [...sections.values()].map(({ name, lines }) => ({
-    site_name: name,
+  return [...sections.values()].map(({ site_name, role, lines }) => ({
+    site_name, role,
     courses: parseCourseLines(lines.join('\n')),
   })).filter(({ courses }) => courses.length > 0);
 }

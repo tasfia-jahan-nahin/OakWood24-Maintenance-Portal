@@ -113,12 +113,13 @@ export function TrainingCheckPage() {
       const detected = findSiteSections(text, allSites);
       setSections(detected);
       if (detected.length > 0) {
-        editRequirements({ ...detected[0], role: listRole || undefined });
+        editRequirements(detected[0]);
       } else {
         setCoursesText(text);
+        setListRole('HCA');
       }
       setNotice(detected.length > 1
-        ? 'Review and save each detected site below.'
+        ? 'Review and save each detected site and role below.'
         : 'Review the site name and course list before saving.');
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Could not read the requirements document.');
@@ -233,11 +234,11 @@ export function TrainingCheckPage() {
                   event.currentTarget.value = '';
                   if (file) void upload(file);
                 }} />
-              <span className="mt-2 block text-xs text-pink-600">For a multi-site file, use a heading like “Site: Abbeyfield” above each list.</span>
+              <span className="mt-2 block text-xs text-pink-600">Unlabelled courses default to HCA. Use a heading like “For Kitchen Assistant” to start a separate list.</span>
             </label>
             {sections.length > 1 && <div className="flex flex-wrap gap-2" aria-label="Detected sites">
-              {sections.map((entry) => <Button key={entry.site_name} type="button" size="sm" variant="outline"
-                disabled={saving || reading} onClick={() => editRequirements({ ...entry, role: listRole || undefined })}>{entry.site_name}</Button>)}
+              {sections.map((entry) => <Button key={trainingListKey(entry.site_name, entry.role)} type="button" size="sm" variant="outline"
+                disabled={saving || reading} onClick={() => editRequirements(entry)}>{entry.site_name} · {entry.role}</Button>)}
             </div>}
             {requirements.length > 0 && <Select id="training-existing-site" label="Edit a saved site"
               value="" disabled={saving || reading} onChange={(event) => {
