@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { readImportRows } from '@/lib/importRows';
 import {
   AlertTriangle,
   ArrowRight,
@@ -43,6 +44,7 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
   const [dragOver, setDragOver] = useState(false);
   const [parsingFile, setParsingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const detectedRows = useMemo(() => readImportRows(rawText).records.length, [rawText]);
 
   const handleParse = async () => {
     setLoading(true);
@@ -71,6 +73,9 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
     setSaveError(null);
     try {
       const text = await parseExcelFile(file);
+      setPreviews(null);
+      setParsedInfo(null);
+      setWarnings([]);
       setRawText(text);
     } catch (err) {
       console.error('File parse error:', err);
@@ -226,7 +231,7 @@ export function ImportPage({ onNavigate }: { onNavigate: (page: PageKey) => void
 
               <div className="mt-4 flex items-center justify-between">
                 <p className="text-xs text-pink-400">
-                  {rawText.trim().split(/\r?\n/).filter((l) => l.trim()).length} lines detected
+                  {detectedRows} rows detected
                 </p>
                 <Button onClick={handleParse} loading={loading} disabled={!rawText.trim()}>
                   <ClipboardPaste size={16} /> Parse & Preview

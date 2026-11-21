@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { readImportRows, spreadsheetRowsToText } from '@/lib/importRows';
 import type {
   Candidate,
   CandidateInput,
@@ -884,28 +885,19 @@ function buildCandidateInsertPayload(
 export function parseImportData(rawText: string): { rows: ParsedImportRow[]; skipped: SkippedImportRow[]; mapping: Record<number, string>; headers: string[]; warnings: string[] } {
   const warnings: string[] = [];
   const skipped: SkippedImportRow[] = [];
-  const lines = rawText
-    .trim()
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.replace(/,/g, '').replace(/\t/g, '').length > 0);
-  if (lines.length < 2) {
+  const { records, warning } = readImportRows(rawText);
+  if (records.length < 2) {
     return {
       rows: [],
       skipped: [],
       mapping: {},
       headers: [],
-      warnings: ['Need at least a header row and one data row.'],
+      warnings: [warning ?? 'Need at least a header row and one data row.'],
     };
   }
 
-  const firstLine = lines[0];
-  const tabCount = (firstLine.match(/\t/g) ?? []).length;
-  const commaCount = (firstLine.match(/,/g) ?? []).length;
-  const delim = tabCount > commaCount ? '\t' : ',';
-
-  const headers = firstLine.split(delim).map((h) => h.trim());
-  const sampleCells = lines[1].split(delim).map((cell) => cell.trim());
+  const [{ cells: headers }, ...dataRows] = records;
+  const sampleCells = dataRows[0].cells;
   const mapping = detectColumnMapping(headers, sampleCells);
 
   if (!Object.values(mapping).includes('full_name')) {
@@ -913,8 +905,7 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
   }
 
   const rows: ParsedImportRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cells = lines[i].split(delim).map((c) => c.trim());
+  for (const { cells, rowNumber } of dataRows) {
     const row: Partial<ParsedImportRow> = { extra_data: {} };
     let rawStatus = '';
 
@@ -968,7 +959,7 @@ export function parseImportData(rawText: string): { rows: ParsedImportRow[]; ski
         row.full_name = row.email ? row.email.split('@')[0] : `Candidate (${row.phone})`;
       } else {
         skipped.push({
-          rowNumber: i + 1,
+          rowNumber,
           reason: 'Missing full_name (Name) field',
           rawValues: cells,
         });
@@ -1121,21 +1112,6 @@ export async function commitImport(
 // ---------- File parsing (xlsx/csv) ----------
 import { readSheet } from 'read-excel-file/browser';
 
-function normalizeSpreadsheetRows(rows: unknown[][]): string {
-  return rows
-    .map((row) =>
-      row
-        .map((cell) =>
-          String(cell ?? '')
-            .replace(/\r\n|\r|\n/g, ' ')
-            .replace(/\t/g, ' ')
-            .trim(),
-        )
-        .join('\t'),
-    )
-    .join('\n');
-}
-
 export async function parseExcelFile(file: File): Promise<string> {
   const ext = file.name.split('.').pop()?.toLowerCase();
 
@@ -1157,11 +1133,11 @@ export async function parseExcelFile(file: File): Promise<string> {
       blankrows: false,
     });
 
-    return normalizeSpreadsheetRows(rows);
+    return spreadsheetRowsToText(rows);
   }
 
   const rows = await readSheet(file);
-  return normalizeSpreadsheetRows(rows as unknown[][]);
+  return spreadsheetRowsToText(rows as unknown[][], true);
 }
 
 // ---------- OCR Document Scanner ----------

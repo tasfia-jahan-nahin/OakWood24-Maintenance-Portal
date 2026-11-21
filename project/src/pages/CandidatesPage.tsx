@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { readImportRows } from '@/lib/importRows';
 import {
   AlertTriangle,
   Ban,
@@ -171,12 +172,7 @@ export function CandidatesPage({ onSelectCandidate, onEdit }: Props) {
 
   const handlePastePreview = async () => {
     const { rows, warnings } = parseImportData(pasteText);
-    const pastedLines = pasteText
-      .trim()
-      .split(/\r?\n/)
-      .filter((line) => line.replace(/,/g, '').replace(/\t/g, '').length > 0);
-    const pastedLine = pastedLines[1] ?? '';
-    const rawRowText = pastedLine.toLowerCase();
+    const rawRowText = readImportRows(pasteText).records[1]?.cells.join(' ').toLowerCase() ?? '';
     let detectedStatus: CandidateStatus = 'active';
     let hasDetectedStatus = false;
 
