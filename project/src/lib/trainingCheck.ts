@@ -1,4 +1,26 @@
-export type SiteTraining = { site_name: string; courses: string[] };
+export const TRAINING_ROLES = ['RGN', 'RMN', 'HCA', 'Kitchen Assistant'] as const;
+export type TrainingRole = (typeof TRAINING_ROLES)[number];
+export type SiteTraining = { site_name: string; courses: string[]; role?: TrainingRole };
+
+export function trainingListKey(siteName: string, role?: TrainingRole): string {
+  return role ? `${role}:${trainingKey(siteName)}` : trainingKey(siteName);
+}
+
+export function trainingListRole(key: string): TrainingRole | undefined {
+  return TRAINING_ROLES.find((role) => key.startsWith(role + ':'));
+}
+
+export function requirementsForRole(entries: SiteTraining[], role?: TrainingRole): SiteTraining[] {
+  const sites = new Map<string, SiteTraining>();
+  for (const entry of entries) {
+    if (entry.role && entry.role !== role) continue;
+    const key = trainingKey(entry.site_name);
+    const previous = sites.get(key)?.courses ?? [];
+    const courses = [...new Map([...previous, ...entry.courses].map((course) => [trainingKey(course), course])).values()];
+    sites.set(key, { site_name: entry.site_name, courses });
+  }
+  return [...sites.values()];
+}
 
 export function trainingKey(value: string): string {
   return value.normalize('NFKC').toLowerCase()

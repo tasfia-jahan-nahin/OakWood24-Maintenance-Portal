@@ -8,7 +8,10 @@ import { Input, Select, Textarea } from '@/components/ui/Input';
 import { fetchCandidatesStrict, getTrustValue, isExpired } from '@/lib/api';
 import { fetchSites } from '@/lib/sites';
 import { supabase, supabaseProjectRef } from '@/lib/supabase';
-import { compareSiteTraining, findSiteSections, parseCourseLines, splitTrustSites, trainingKey, type SiteTraining } from '@/lib/trainingCheck';
+import {
+  compareSiteTraining, findSiteSections, parseCourseLines, requirementsForRole, splitTrustSites,
+  trainingKey, trainingListKey, trainingListRole, TRAINING_ROLES, type SiteTraining, type TrainingRole,
+} from '@/lib/trainingCheck';
 import type { Candidate } from '@/types';
 
 export function TrainingCheckPage() {
@@ -18,9 +21,11 @@ export function TrainingCheckPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [registeredSites, setRegisteredSites] = useState<string[]>([]);
   const [site, setSite] = useState('');
+  const [role, setRole] = useState<TrainingRole | ''>('');
   const [candidateId, setCandidateId] = useState('');
   const [candidateSearch, setCandidateSearch] = useState('');
   const [siteName, setSiteName] = useState('');
+  const [listRole, setListRole] = useState<TrainingRole | ''>('');
   const [coursesText, setCoursesText] = useState('');
   const [sections, setSections] = useState<SiteTraining[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +42,7 @@ export function TrainingCheckPage() {
         const [people, sites, result] = await Promise.all([
           fetchCandidatesStrict(),
           fetchSites().catch(() => []),
-          supabase.from('training_site_requirements').select('site_name,courses').order('site_name'),
+          supabase.from('training_site_requirements').select('site_key,site_name,courses').order('site_name'),
         ]);
         if (!active) return;
         setCandidates(people);
@@ -49,7 +54,9 @@ export function TrainingCheckPage() {
         } else if (result.error) {
           throw result.error;
         } else {
-          setRequirements(result.data ?? []);
+          setRequirements((result.data ?? []).map(({ site_key, site_name, courses }) => ({
+            site_name, courses, role: trainingListRole(site_key),
+          })));
         }
       } catch (error) {
         console.error('Training Check load failed:', error);
@@ -67,7 +74,8 @@ export function TrainingCheckPage() {
     ...candidates.flatMap((person) => splitTrustSites(getTrustValue(person))),
     ...requirements.map(({ site_name }) => site_name),
   ].map((name) => [trainingKey(name), name])).values()].sort((a, b) => a.localeCompare(b));
-  const required = requirements.find(({ site_name }) => trainingKey(site_name) === site)?.courses ?? [];
+  const scopedRequirements = requirementsForRole(requirements, role || undefined);
+  const required = scopedRequirements.find(({ site_name }) => trainingKey(site_name) === site)?.courses ?? [];
   const candidate = candidates.find(({ id }) => id === candidateId);
   const filteredCandidates = candidates.filter(({ id, full_name }) =>
     id === candidateId || full_name.toLowerCase().includes(candidateSearch.trim().toLowerCase()),
@@ -82,11 +90,12 @@ export function TrainingCheckPage() {
         ? `Pending ${value}` : value),
   ].filter((note): note is string => !!note?.trim() && !/^n\/?a$/i.test(note.trim())) : [];
   const comparison = candidate
-    ? compareSiteTraining(required, candidateSites, requirements, notes, isExpired(candidate.training_expiry_date))
+    ? compareSiteTraining(required, candidateSites, scopedRequirements, notes, isExpired(candidate.training_expiry_date))
     : null;
 
   const editRequirements = (entry: SiteTraining) => {
     setSiteName(entry.site_name);
+    setListRole(entry.role ?? '');
     setCoursesText(entry.courses.join('\n'));
     setNotice('');
     setError('');
@@ -104,7 +113,7 @@ export function TrainingCheckPage() {
       const detected = findSiteSections(text, allSites);
       setSections(detected);
       if (detected.length > 0) {
-        editRequirements(detected[0]);
+        editRequirements({ ...detected[0], role: listRole || undefined });
       } else {
         setCoursesText(text);
       }
@@ -122,29 +131,30 @@ export function TrainingCheckPage() {
     event.preventDefault();
     if (!isAdmin || saving) return;
     const site_name = siteName.trim();
-    const key = trainingKey(site_name);
+    const key = trainingListKey(site_name, listRole || undefined);
     const courses = parseCourseLines(coursesText);
     setNotice('');
-    if (!key || key.length > 200 || !courses.length || courses.length > 250 || courses.some((course) => course.length > 300)) {
+    if (!trainingKey(site_name) || key.length > 200 || !courses.length || courses.length > 250 || courses.some((course) => course.length > 300)) {
       setError('Enter a site name and 1–250 course names, each no longer than 300 characters.');
       return;
     }
     setSaving(true);
     setError('');
     try {
-      const updated = { site_name, courses };
-      const next = [...requirements.filter((entry) => trainingKey(entry.site_name) !== key), updated];
+      const updated = { site_name, courses, role: listRole || undefined };
+      const next = [...requirements.filter((entry) => trainingListKey(entry.site_name, entry.role) !== key), updated];
       if (localOnly) {
         localStorage.setItem(localKey, JSON.stringify(next));
       } else {
         const { error } = await supabase.from('training_site_requirements').upsert({
-          site_key: key, ...updated, updated_at: new Date().toISOString(),
+          site_key: key, site_name, courses, updated_at: new Date().toISOString(),
         }, { onConflict: 'site_key' });
         if (error) throw error;
       }
       setRequirements(next);
-      setSite(key);
-      setNotice(`Saved ${courses.length} required courses for ${site_name}.`);
+      setSite(trainingKey(site_name));
+      setRole(listRole);
+      setNotice(`Saved ${courses.length} required courses for ${site_name} · ${listRole || 'All roles'}.`);
     } catch (error) {
       console.error('Training requirements save failed:', error);
       setError('Could not save the site requirements. Your changes are still in the form.');
@@ -170,6 +180,10 @@ export function TrainingCheckPage() {
               <option value="">Choose a site</option>
               {allSites.map((name) => <option key={trainingKey(name)} value={trainingKey(name)}>{name}</option>)}
             </Select>
+            <Select id="training-role" label="Role" value={role} onChange={(event) => setRole(event.target.value as TrainingRole | '')}>
+              <option value="">All roles (shared courses)</option>
+              {TRAINING_ROLES.map((option) => <option key={option}>{option}</option>)}
+            </Select>
             <Input id="training-candidate-search" label="Find a candidate" type="search" placeholder="Search by name"
               value={candidateSearch} onChange={(event) => setCandidateSearch(event.target.value)} />
             <Select id="training-candidate" label="Candidate (optional)" value={candidateId}
@@ -187,7 +201,7 @@ export function TrainingCheckPage() {
                 <ul className="mt-2 list-disc space-y-1 pl-5">{notes.map((note, index) => <li key={index}>{note}</li>)}</ul>
               </details>}
             </div>}
-            {site && required.length === 0 && <p className="text-sm text-pink-600">This site has no saved training requirements yet.</p>}
+            {site && required.length === 0 && <p className="text-sm text-pink-600">No training requirements are saved for this site and role yet.</p>}
             {required.length > 0 && (
               <ul className="space-y-2" aria-label="Mandatory training">
                 {comparison ? comparison.rows.map(({ course, status, sources, reason }) => {
@@ -223,20 +237,28 @@ export function TrainingCheckPage() {
             </label>
             {sections.length > 1 && <div className="flex flex-wrap gap-2" aria-label="Detected sites">
               {sections.map((entry) => <Button key={entry.site_name} type="button" size="sm" variant="outline"
-                disabled={saving || reading} onClick={() => editRequirements(entry)}>{entry.site_name}</Button>)}
+                disabled={saving || reading} onClick={() => editRequirements({ ...entry, role: listRole || undefined })}>{entry.site_name}</Button>)}
             </div>}
             {requirements.length > 0 && <Select id="training-existing-site" label="Edit a saved site"
               value="" disabled={saving || reading} onChange={(event) => {
-                const entry = requirements.find(({ site_name }) => trainingKey(site_name) === event.target.value);
+                const entry = requirements.find(({ site_name, role }) => trainingListKey(site_name, role) === event.target.value);
                 if (entry) editRequirements(entry);
               }}>
               <option value="">Choose a saved list</option>
-              {requirements.map(({ site_name }) => <option key={trainingKey(site_name)} value={trainingKey(site_name)}>{site_name}</option>)}
+              {requirements.map(({ site_name, role }) => {
+                const key = trainingListKey(site_name, role);
+                return <option key={key} value={key}>{site_name} · {role ?? 'All roles'}</option>;
+              })}
             </Select>}
             <form onSubmit={save} className="space-y-3">
               <Input id="training-site-name" label="Site name" list="training-site-options" value={siteName} maxLength={200}
                 disabled={saving || reading} required onChange={(event) => setSiteName(event.target.value)} />
               <datalist id="training-site-options">{allSites.map((name) => <option key={name} value={name} />)}</datalist>
+              <Select id="training-list-role" label="Who needs these courses?" value={listRole}
+                disabled={saving || reading} onChange={(event) => setListRole(event.target.value as TrainingRole | '')}>
+                <option value="">All roles</option>
+                {TRAINING_ROLES.map((option) => <option key={option}>{option}</option>)}
+              </Select>
               <Textarea id="training-courses" label="Mandatory courses (one per line)" rows={8} value={coursesText}
                 disabled={saving || reading} required onChange={(event) => setCoursesText(event.target.value)} />
               <Button type="submit" loading={saving} disabled={reading}>Save site requirements</Button>
