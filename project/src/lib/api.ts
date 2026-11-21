@@ -229,15 +229,20 @@ export async function fetchCandidates(): Promise<Candidate[]> {
 }
 
 export async function fetchCandidatesStrict(): Promise<Candidate[]> {
-  const { data, error } = await supabase
-    .from('candidates')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (error) {
-    console.error('Failed to fetch candidates for sites:', error);
-    throw error;
+  const candidates: Candidate[] = [];
+  const pageSize = 500;
+  while (true) {
+    const first = candidates.length;
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(first, first + pageSize - 1);
+    if (error) throw error;
+    if (!data?.length) return candidates;
+    candidates.push(...data.map(normalizeCandidate));
   }
-  return (data ?? []).map(normalizeCandidate);
 }
 
 export async function fetchCandidate(id: string): Promise<Candidate | null> {

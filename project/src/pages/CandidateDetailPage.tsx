@@ -26,7 +26,7 @@ import {
   daysUntilExpiry,
   deleteCandidate,
   enrichCandidates,
-  fetchCandidates,
+  fetchCandidate,
   fetchReminderSettings,
   getExpiryBadgeText,
   scanDocument,
@@ -81,15 +81,15 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
 
   const load = useCallback(async () => {
     try {
-      const [cands, s] = await Promise.all([fetchCandidates(), fetchReminderSettings()]);
-      setCandidates(cands);
+      const [record, s] = await Promise.all([candidateId ? fetchCandidate(candidateId) : null, fetchReminderSettings()]);
+      setCandidates(record ? [record] : []);
       setSettings(s);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [candidateId]);
 
   useEffect(() => {
     load();

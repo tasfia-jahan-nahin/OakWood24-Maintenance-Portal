@@ -3,6 +3,7 @@ import {
   BarChart3,
   Ban,
   Building2,
+  CalendarDays,
   ClipboardCheck,
   HeartPulse,
   History,
@@ -26,6 +27,7 @@ export type PageKey =
   | 'edit-candidate'
   | 'training-check'
   | 'chase-centre'
+  | 'monthly-expiration'
   | 'do-not-book'
   | 'history'
   | 'reports'
@@ -45,6 +47,7 @@ const navItems: { key: PageKey; label: string; icon: typeof LayoutDashboard; adm
   { key: 'import', label: 'Import', icon: Upload },
   { key: 'training-check', label: 'Training Check', icon: ClipboardCheck },
   { key: 'chase-centre', label: 'Chase Centre', icon: Zap },
+  { key: 'monthly-expiration', label: 'Monthly Expiration', icon: CalendarDays },
   { key: 'do-not-book', label: 'Do Not Book', icon: Ban },
   { key: 'history', label: 'Audit History', icon: History },
   { key: 'reports', label: 'Reports', icon: BarChart3 },

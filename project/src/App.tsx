@@ -14,6 +14,7 @@ import { ReportsPage } from '@/pages/ReportsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { SitesPage } from '@/pages/SitesPage';
 import { TrainingCheckPage } from '@/pages/TrainingCheckPage';
+import { MonthlyExpirationPage } from '@/pages/MonthlyExpirationPage';
 import { Spinner } from '@/components/ui/EmptyState';
 import { StatusPopup } from '@/components/StatusPopup';
 
@@ -93,6 +94,7 @@ function AppContent() {
       )}
       {page === 'list' && <ListPage />}
       {page === 'chase-centre' && <ChaseCentrePage onEdit={handleEditCandidate} />}
+      {page === 'monthly-expiration' && <MonthlyExpirationPage onEdit={handleEditCandidate} />}
       {page === 'do-not-book' && <DoNotBookPage onEdit={handleEditCandidate} />}
       {page === 'history' && <HistoryPage />}
       {page === 'reports' && <ReportsPage />}
