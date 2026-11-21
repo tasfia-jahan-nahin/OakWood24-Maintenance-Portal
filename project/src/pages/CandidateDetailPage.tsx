@@ -49,6 +49,7 @@ import {
   STATUS_LABELS,
 } from '@/types';
 import { documentRemarkField, getDocumentRemark, isFollowUpField } from '@/lib/candidateFollowUp';
+import { getCandidatePostcode } from '@/lib/candidatePostcode';
 
 const documentOptions = Object.entries(DOCUMENT_TYPE_LABELS) as [DocumentType, string][];
 
@@ -120,6 +121,7 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
   const documentRemarks = documentOptions
     .map(([type, label]) => ({ type, label, remark: getDocumentRemark(candidate, type) }))
     .filter(({ remark }) => remark);
+  const postcode = getCandidatePostcode(candidate);
 
   const selectRemarkDocument = (document: DocumentType) => {
     setRemarkError('');
@@ -229,7 +231,7 @@ export function CandidateDetailPage({ candidateId, onBack, editMode }: Props) {
                     {candidate.job_title}
                   </span>
                 )}
-                <p className="text-pink-500 text-sm">{candidate.role}</p>
+                {postcode && <p className="text-pink-500 text-sm">{postcode}</p>}
               </div>
               <div className="flex flex-wrap gap-4 mt-3 text-sm text-pink-600">
                 {candidate.email && (
