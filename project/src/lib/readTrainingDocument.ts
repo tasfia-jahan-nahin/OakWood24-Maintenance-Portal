@@ -1,4 +1,6 @@
-export async function readTrainingDocument(file: File): Promise<string> {
+import { spreadsheetRowsToText } from './importRows';
+
+export async function readTrainingDocument(file: File, preserveTables = false): Promise<string> {
   const extension = file.name.split('.').pop()?.toLowerCase();
   if (file.size > 25 * 1024 * 1024) throw new Error('Choose a document smaller than 25 MB.');
   if (extension === 'txt') return file.text();
@@ -10,6 +12,14 @@ export async function readTrainingDocument(file: File): Promise<string> {
     if (!archive['word/document.xml']) throw new Error('Could not read this Word document.');
     const xml = new DOMParser().parseFromString(strFromU8(archive['word/document.xml']), 'application/xml');
     if (xml.querySelector('parsererror')) throw new Error('Could not read this Word document.');
+    if (preserveTables) {
+      const rows = Array.from(xml.getElementsByTagNameNS('*', 'tr'));
+      if (rows.length) return spreadsheetRowsToText(rows.map((row) => Array.from(row.children)
+        .filter((cell) => cell.localName === 'tc')
+        .map((cell) => Array.from(cell.getElementsByTagNameNS('*', 'p'))
+          .map((paragraph) => Array.from(paragraph.getElementsByTagNameNS('*', 't'))
+            .map((element) => element.textContent).join('')).join(' '))));
+    }
     const paragraphs = Array.from(xml.getElementsByTagNameNS('*', 'p'));
     return paragraphs.map((paragraph) => {
       const text = Array.from(paragraph.getElementsByTagNameNS('*', 't')).map((element) => element.textContent).join('');

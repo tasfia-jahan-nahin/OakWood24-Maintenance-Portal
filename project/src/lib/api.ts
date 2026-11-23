@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import { readImportRows, spreadsheetRowsToText } from '@/lib/importRows';
 import { getMedComp, MEDCOMP_EXPIRY_FIELD } from '@/lib/medcomp';
 import { portalToday } from '@/lib/monthlyExpirations';
+import { inactiveFields, isArchived, newInactivation } from '@/lib/inactiveCandidates';
 import type {
   Candidate,
   CandidateInput,
@@ -263,7 +264,9 @@ export async function fetchCandidate(id: string): Promise<Candidate | null> {
 
 export async function createCandidate(input: CandidateInput): Promise<Candidate> {
   const goodbyeEmailSent = (input.remark ?? '').toLowerCase().includes('goodbye email sent');
-  const payload = moveCosExpiryToExtraData({ ...input, goodbye_email_sent: goodbyeEmailSent });
+  const extra = input.status === 'inactive' && !goodbyeEmailSent
+    ? { ...input.extra_data, ...newInactivation(input.extra_data) } : input.extra_data;
+  const payload = moveCosExpiryToExtraData({ ...input, extra_data: extra, goodbye_email_sent: goodbyeEmailSent });
   let result = await supabase.from('candidates').insert(payload).select().single();
   if (result.error) {
     result = await supabase
@@ -283,6 +286,7 @@ export async function updateCandidate(
   input: Partial<CandidateInput>,
   candidateName?: string,
   expectedExpiry?: { field: (typeof DOCUMENT_TYPE_TO_FIELD)[DocumentType] | typeof MEDCOMP_EXPIRY_FIELD; value: string },
+  expectedUpdatedAt?: string,
 ): Promise<Candidate> {
   const updateData: Record<string, unknown> = { ...input };
   if (input.remark !== undefined) {
@@ -294,6 +298,20 @@ export async function updateCandidate(
     .eq('id', id)
     .single();
   if (readError) throw readError;
+  if (expectedUpdatedAt !== undefined && existing.updated_at !== expectedUpdatedAt) {
+    throw new Error('This candidate changed since you opened the page. Refresh the list and try again.');
+  }
+  const startingInactivation = input.status === 'inactive' && existing.status !== 'inactive'
+    && !isArchived({ ...existing, ...updateData });
+  if (startingInactivation) {
+    const extra = { ...input.extra_data };
+    if (extra[inactiveFields.date] === existing.extra_data?.[inactiveFields.date] && expectedUpdatedAt === undefined) {
+      delete extra[inactiveFields.date];
+      delete extra[inactiveFields.reason];
+      delete extra[inactiveFields.chased];
+    }
+    updateData.extra_data = { ...extra, ...newInactivation(extra) };
+  }
   const currentExpiry = expectedExpiry && (expectedExpiry.field === MEDCOMP_EXPIRY_FIELD
     ? getMedComp(existing).expiry : normalizeCandidate(existing)[expectedExpiry.field]);
   if (expectedExpiry && currentExpiry !== expectedExpiry.value) {
@@ -301,7 +319,7 @@ export async function updateCandidate(
   }
 
   const hasCosColumn = Object.hasOwn(existing, 'cos_expiry_date');
-  const writesExtraData = input.extra_data !== undefined || input.cos_expiry_date !== undefined;
+  const writesExtraData = updateData.extra_data !== undefined || input.cos_expiry_date !== undefined;
   const candidateUpdateData = moveCosExpiryToExtraData(
     updateData,
     (existing?.extra_data as Record<string, unknown> | null | undefined) ?? null,
@@ -313,7 +331,9 @@ export async function updateCandidate(
 
   const save = (payload: Record<string, unknown>) => {
     let query = supabase.from('candidates').update(payload).eq('id', id);
-    if (expectedExpiry) query = query.eq('updated_at', existing.updated_at);
+    if (expectedExpiry || expectedUpdatedAt !== undefined || input.status === 'inactive') {
+      query = query.eq('updated_at', existing.updated_at);
+    }
     if (Object.hasOwn(payload, 'extra_data')) {
       query = existing.extra_data === null
         ? query.is('extra_data', null)
@@ -1091,7 +1111,11 @@ export async function commitImport(
 
   const BATCH_SIZE = 25;
   const createRows = createPreviews.map((p) =>
-    buildCandidateInsertPayload(p.row, {
+    buildCandidateInsertPayload({
+      ...p.row,
+      extra_data: p.row.status === 'inactive' && !p.row.remark?.toLowerCase().includes('goodbye email sent')
+        ? { ...p.row.extra_data, ...newInactivation(p.row.extra_data) } : p.row.extra_data,
+    }, {
       role: 'Healthcare Professional',
       goodbye_email_sent: (p.row.remark ?? '').toLowerCase().includes('goodbye email sent'),
     }),

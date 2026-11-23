@@ -44,9 +44,9 @@ function importDelimiter(text: string): ',' | '\t' {
   return hasTab ? '\t' : ',';
 }
 
-export function readImportRows(raw: string): { records: { cells: string[]; rowNumber: number }[]; warning?: string } {
+export function readImportRows(raw: string, separator?: '|'): { records: { cells: string[]; rowNumber: number }[]; warning?: string } {
   const text = raw.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
-  const delimiter = importDelimiter(text);
+  const delimiter = separator ?? importDelimiter(text);
   const records: { cells: string[]; rowNumber: number }[] = [];
   let cells: string[] = [];
   let value = '';

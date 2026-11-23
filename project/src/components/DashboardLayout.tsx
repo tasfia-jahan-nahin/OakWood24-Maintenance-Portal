@@ -29,6 +29,7 @@ export type PageKey =
   | 'chase-centre'
   | 'monthly-expiration'
   | 'do-not-book'
+  | 'inactive-candidates'
   | 'history'
   | 'reports'
   | 'sites'
@@ -49,6 +50,7 @@ const navItems: { key: PageKey; label: string; icon: typeof LayoutDashboard; adm
   { key: 'chase-centre', label: 'Chase Centre', icon: Zap },
   { key: 'monthly-expiration', label: 'Monthly Expiration', icon: CalendarDays },
   { key: 'do-not-book', label: 'Do Not Book', icon: Ban },
+  { key: 'inactive-candidates', label: 'Inactive Candidates', icon: Users },
   { key: 'history', label: 'Audit History', icon: History },
   { key: 'reports', label: 'Reports', icon: BarChart3 },
   { key: 'sites', label: 'Sites', icon: Building2 },

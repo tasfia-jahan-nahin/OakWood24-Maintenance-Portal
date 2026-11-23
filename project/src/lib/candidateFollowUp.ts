@@ -1,5 +1,6 @@
 import { COMPLIANCE_DATE_FIELDS, type Candidate, type CandidateWithExpiry, type ChaseDocumentType } from '@/types';
 import { MEDCOMP_ANSWER_FIELD, MEDCOMP_EXPIRY_FIELD, MEDCOMP_ROLE_FIELD } from './medcomp';
+import { isInactiveField } from './inactiveCandidates';
 
 const DOCUMENT_REMARK_PREFIX = '__oakwood_document_remark_';
 export const DNB_EMAIL_FIELD = '__oakwood_dnb_email_followup';
@@ -14,7 +15,7 @@ export function getDocumentRemark(candidate: Candidate, document: ChaseDocumentT
 
 export function isFollowUpField(field: string): boolean {
   return [DNB_EMAIL_FIELD, MEDCOMP_ROLE_FIELD, MEDCOMP_ANSWER_FIELD, MEDCOMP_EXPIRY_FIELD].includes(field)
-    || field.startsWith(DOCUMENT_REMARK_PREFIX);
+    || field.startsWith(DOCUMENT_REMARK_PREFIX) || isInactiveField(field);
 }
 
 export function doNotBookFollowUpKey(candidate: CandidateWithExpiry): string {

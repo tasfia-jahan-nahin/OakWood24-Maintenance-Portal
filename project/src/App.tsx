@@ -10,6 +10,7 @@ import { ImportPage } from '@/pages/ImportPage';
 import { ChaseCentrePage } from '@/pages/ChaseCentrePage';
 import { DoNotBookPage } from '@/pages/DoNotBookPage';
 import { HistoryPage } from '@/pages/HistoryPage';
+import { InactiveCandidatesPage } from '@/pages/InactiveCandidatesPage';
 import { ReportsPage } from '@/pages/ReportsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { SitesPage } from '@/pages/SitesPage';
@@ -97,6 +98,7 @@ function AppContent() {
       {page === 'monthly-expiration' && <MonthlyExpirationPage onEdit={handleEditCandidate} />}
       {page === 'do-not-book' && <DoNotBookPage onEdit={handleEditCandidate} />}
       {page === 'history' && <HistoryPage />}
+      {page === 'inactive-candidates' && <InactiveCandidatesPage />}
       {page === 'reports' && <ReportsPage />}
       {page === 'sites' && <SitesPage />}
       {page === 'settings' && <SettingsPage />}
