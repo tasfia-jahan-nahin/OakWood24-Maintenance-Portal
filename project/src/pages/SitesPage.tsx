@@ -4,6 +4,7 @@ import {
   Check,
   Link2,
   MapPin,
+  Pencil,
   Plus,
   Search,
   Trash2,
@@ -15,15 +16,20 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { EmptyState, PageHeader, Spinner } from '@/components/ui/EmptyState';
 import { Input, Select } from '@/components/ui/Input';
+import { Modal } from '@/components/ui/Modal';
+import { countCandidatesByGroup } from '@/lib/siteGroups';
 import {
   assignCandidateToSite,
   createSite,
-  ensureDiscoveredSites,
+  createSiteGroup,
+  deleteSiteLocation,
   fetchCandidateSiteAssignments,
+  fetchSiteGroups,
   fetchSites,
   removeCandidateFromSite,
+  updateSiteLocation,
 } from '@/lib/sites';
-import { fetchCandidatesStrict, getTrustOptions } from '@/lib/api';
+import { fetchCandidatesStrict } from '@/lib/api';
 import {
   CANDIDATE_STATUSES,
   STATUS_LABELS,
@@ -31,8 +37,8 @@ import {
   type CandidateStatus,
   type CandidateSiteAssignment,
   type Site,
+  type SiteGroup,
 } from '@/types';
-import { supabaseProjectRef } from '@/lib/supabase';
 
 const STATUS_TONES: Record<CandidateStatus, 'active' | 'inactive' | 'pink' | 'pending' | 'archived'> = {
   active: 'active',
@@ -79,6 +85,14 @@ function SummaryCard({ label, value, icon: Icon }: { label: string; value: numbe
 
 export function SitesPage() {
   const [sites, setSites] = useState<Site[]>([]);
+  const [groups, setGroups] = useState<SiteGroup[]>([]);
+  const [groupFilter, setGroupFilter] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [siteEdit, setSiteEdit] = useState<{ id: string; name: string; groupId: string } | null>(null);
+  const [siteDelete, setSiteDelete] = useState<Site | null>(null);
+  const [deleteChoice, setDeleteChoice] = useState('');
+  const [siteDialogError, setSiteDialogError] = useState('');
+  const [ready, setReady] = useState(false);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [assignments, setAssignments] = useState<CandidateSiteAssignment[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState('');
@@ -97,20 +111,20 @@ export function SitesPage() {
     setLoading(true);
     setError(null);
     try {
-      const loadedCandidates = await fetchCandidatesStrict();
-      setCandidates(loadedCandidates);
-      const discovered = await ensureDiscoveredSites(getTrustOptions(loadedCandidates));
-      setSites(discovered);
-      const [loadedSites, loadedAssignments] = await Promise.all([
-        Promise.resolve(discovered),
-        fetchCandidateSiteAssignments(),
+      const loadedGroups = await fetchSiteGroups();
+      const [loadedCandidates, loadedSites, loadedAssignments] = await Promise.all([
+        fetchCandidatesStrict(), fetchSites(), fetchCandidateSiteAssignments(),
       ]);
+      setGroups(loadedGroups);
+      setCandidates(loadedCandidates);
       setSites(loadedSites);
       setAssignments(loadedAssignments);
+      setReady(true);
       setSelectedSiteId((current) =>
         loadedSites.some((site) => site.id === current) ? current : (loadedSites[0]?.id ?? ''),
       );
     } catch (loadError) {
+      setReady(false);
       console.error('Failed to load sites page:', loadError);
       setError(messageForError(loadError));
     } finally {
@@ -144,6 +158,15 @@ export function SitesPage() {
     }
     return counts;
   }, [assignments, candidatesById]);
+  const countsByGroup = useMemo(() =>
+    countCandidatesByGroup(sites, assignments, new Set(candidatesById.keys())),
+  [sites, assignments, candidatesById]);
+  const selectGroup = (id: string) => {
+    setGroupFilter(id);
+    if (id && !sites.some((site) => site.id === selectedSiteId && (site.group_id ?? 'ungrouped') === id)) {
+      setSelectedSiteId(sites.find((site) => (site.group_id ?? 'ungrouped') === id)?.id ?? '');
+    }
+  };
 
   const selectedSite = sites.find((site) => site.id === selectedSiteId) ?? null;
   const assignedToSelectedSite = useMemo(() => {
@@ -161,6 +184,7 @@ export function SitesPage() {
     return matchesSearch && (statusFilter === 'all' || candidate.status === statusFilter);
   });
   const visibleSites = sites.filter((site) =>
+    (!groupFilter || (site.group_id ?? 'ungrouped') === groupFilter) &&
     site.name.toLowerCase().includes(siteSearch.trim().toLowerCase()),
   );
   const matchingCandidates = candidates
@@ -174,6 +198,7 @@ export function SitesPage() {
   );
 
   const handleAddSite = async () => {
+    if (!ready || saving) return;
     const normalized = siteName.trim().toLocaleLowerCase();
     if (!normalized) {
       setError('Enter a site name.');
@@ -187,12 +212,65 @@ export function SitesPage() {
     setSaving(true);
     setError(null);
     try {
-      const site = await createSite(siteName);
+      const site = await createSite(siteName, groupFilter && groupFilter !== 'ungrouped' ? groupFilter : null);
       setSites((current) => [...current, site].sort((a, b) => a.name.localeCompare(b.name)));
       setSelectedSiteId(site.id);
       setSiteName('');
     } catch (saveError) {
       setError(messageForError(saveError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddGroup = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!ready || saving || !groupName.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const group = await createSiteGroup(groupName);
+      setGroups((current) => [...current, group].sort((a, b) => a.name.localeCompare(b.name)));
+      setGroupName('');
+      selectGroup(group.id);
+    } catch (error) {
+      setError(messageForError(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveSite = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!siteEdit || saving || !siteEdit.name.trim()) return;
+    setSaving(true);
+    setSiteDialogError('');
+    try {
+      const updated = await updateSiteLocation(siteEdit.id, siteEdit.name, siteEdit.groupId || null);
+      setSites((current) => current.map((site) => site.id === updated.id ? updated : site).sort((a, b) => a.name.localeCompare(b.name)));
+      setGroupFilter(updated.group_id ?? 'ungrouped');
+      setSiteEdit(null);
+    } catch (error) {
+      setSiteDialogError(messageForError(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteSite = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!siteDelete || saving || ((countsBySite.get(siteDelete.id) ?? 0) > 0 && !deleteChoice)) return;
+    setSaving(true);
+    setSiteDialogError('');
+    try {
+      const destination = sites.find((site) => site.id === deleteChoice);
+      await deleteSiteLocation(siteDelete.id, destination?.id ?? null);
+      setSiteDelete(null);
+      setSelectedSiteId(destination?.id ?? '');
+      setGroupFilter(destination?.group_id ?? '');
+      await loadData();
+    } catch (error) {
+      setSiteDialogError(messageForError(error));
     } finally {
       setSaving(false);
     }
@@ -253,7 +331,7 @@ export function SitesPage() {
               }}
               className="min-w-0 sm:w-56"
             />
-            <Button onClick={() => void handleAddSite()} loading={saving} className="shrink-0">
+            <Button onClick={() => void handleAddSite()} loading={saving} disabled={!ready} className="shrink-0">
               <Plus size={17} /> Add site
             </Button>
           </div>
@@ -269,23 +347,20 @@ export function SitesPage() {
 
       {!error && candidates.length === 0 && (
         <div role="status" className="rounded-xl border border-warning-500/30 bg-warning-50 px-4 py-3 text-sm text-warning-700">
-          No candidate records are visible in Supabase project <span className="font-semibold">{supabaseProjectRef}</span>.
-          Sites reads the same <code>public.candidates</code> table as Candidates; verify that the deployed
-          <code className="mx-1">VITE_SUPABASE_URL</code> points to the project containing your existing records.
-          No candidate records have been created or re-imported.
+          There are no candidates in your workspace yet.
         </div>
       )}
 
-      <section aria-label="Site summary" className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+      {ready && <section aria-label="Site summary" className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
         <SummaryCard label="Total sites" value={sites.length} icon={Building2} />
         <SummaryCard label="Unique candidates" value={uniqueAssignedCandidates.length} icon={Users} />
         <SummaryCard label="Assignments" value={assignments.length} icon={Link2} />
         <SummaryCard label="Active" value={statusCounts.active} icon={Check} />
         <SummaryCard label="Inactive" value={statusCounts.inactive} icon={Users} />
         <SummaryCard label="No Zoho" value={statusCounts.noZoho} icon={MapPin} />
-      </section>
+      </section>}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(260px,0.8fr)_minmax(0,2fr)]">
+      {ready && <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(260px,0.8fr)_minmax(0,2fr)]">
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
@@ -294,6 +369,24 @@ export function SitesPage() {
             </div>
           </CardHeader>
           <CardBody>
+            <form className="mb-4 flex items-end gap-2" onSubmit={handleAddGroup}>
+              <div className="min-w-0 flex-1">
+                <Input id="site-group-name" label="New group" placeholder="e.g. Abbeyfield" value={groupName}
+                  required maxLength={200} onChange={(event) => setGroupName(event.target.value)} />
+              </div>
+              <Button type="submit" variant="outline" disabled={saving}><Plus size={16} /> Add</Button>
+            </form>
+            <div className="mb-4 space-y-1" aria-label="Site groups">
+              <Button type="button" size="sm" variant={groupFilter === '' ? 'secondary' : 'ghost'} onClick={() => selectGroup('')}>All sites</Button>
+              <Button type="button" size="sm" variant={groupFilter === 'ungrouped' ? 'secondary' : 'ghost'} onClick={() => selectGroup('ungrouped')}>Ungrouped</Button>
+              {groups.map((group) => (
+                <button type="button" key={group.id} onClick={() => selectGroup(group.id)} aria-pressed={groupFilter === group.id}
+                  className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-pink-900 ${groupFilter === group.id ? 'bg-pink-100' : 'hover:bg-pink-50'}`}>
+                  <span>{group.name}</span>
+                  <Badge tone="pink">{countsByGroup.get(group.id)?.size ?? 0} candidates</Badge>
+                </button>
+              ))}
+            </div>
             <Input
               aria-label="Search sites"
               placeholder="Search sites..."
@@ -321,7 +414,7 @@ export function SitesPage() {
                     <Badge tone="neutral">{countsBySite.get(site.id) ?? 0}</Badge>
                   </span>
                   <span className="mt-1 block pl-6 text-xs text-pink-400">
-                    {site.source === 'manual' ? 'Manually added' : 'From candidate import'}
+                    {groups.find((group) => group.id === site.group_id)?.name ?? 'Ungrouped'}
                   </span>
                 </button>
               ))}
@@ -433,7 +526,17 @@ export function SitesPage() {
                     {assignedToSelectedSite.length} unique candidate{assignedToSelectedSite.length === 1 ? '' : 's'} assigned
                   </p>
                 </div>
-                {selectedSite && <Badge tone="pink">{countsBySite.get(selectedSite.id) ?? 0} total</Badge>}
+                {selectedSite && <div className="flex gap-2">
+                  <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => {
+                    setSiteDialogError('');
+                    setSiteEdit({ id: selectedSite.id, name: selectedSite.name, groupId: selectedSite.group_id ?? '' });
+                  }}><Pencil size={14} /> Edit site</Button>
+                  <Button type="button" size="sm" variant="ghost" className="text-danger-600" disabled={saving} onClick={() => {
+                    setSiteDialogError('');
+                    setDeleteChoice('');
+                    setSiteDelete(selectedSite);
+                  }}><Trash2 size={14} /> Delete site</Button>
+                </div>}
               </div>
             </CardHeader>
             <CardBody>
@@ -500,7 +603,39 @@ export function SitesPage() {
             </CardBody>
           </Card>
         </div>
-      </div>
+      </div>}
+      <Modal open={!!siteEdit} title="Edit site" size="sm" onClose={() => { if (!saving) setSiteEdit(null); }}>
+        {siteEdit && <form className="space-y-4" onSubmit={saveSite}>
+          <Input id="site-edit-name" label="Location name" value={siteEdit.name} required maxLength={200} disabled={saving}
+            onChange={(event) => setSiteEdit({ ...siteEdit, name: event.target.value })} />
+          <Select id="site-edit-group" label="Group" value={siteEdit.groupId} disabled={saving}
+            onChange={(event) => setSiteEdit({ ...siteEdit, groupId: event.target.value })}>
+            <option value="">Ungrouped</option>
+            {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+          </Select>
+          {siteDialogError && <p role="alert" className="text-sm text-danger-600">{siteDialogError}</p>}
+          <Button type="submit" loading={saving}>Save site</Button>
+        </form>}
+      </Modal>
+      <Modal open={!!siteDelete} title="Delete site" size="sm" onClose={() => { if (!saving) setSiteDelete(null); }}>
+        {siteDelete && <form className="space-y-4" onSubmit={deleteSite}>
+          <p className="text-sm text-pink-700">Delete {siteDelete.name}? Its candidate records will remain in your workspace.</p>
+          {(countsBySite.get(siteDelete.id) ?? 0) > 0 && <Select id="delete-site-assignments"
+            label={`What should happen to its ${countsBySite.get(siteDelete.id)} candidate assignments?`}
+            value={deleteChoice} required disabled={saving} onChange={(event) => setDeleteChoice(event.target.value)}>
+            <option value="">Choose an option</option>
+            <option value="remove">Remove these assignments</option>
+            {sites.filter((site) => site.id !== siteDelete.id).map((site) =>
+              <option key={site.id} value={site.id}>Move to {site.name}</option>,
+            )}
+          </Select>}
+          {siteDialogError && <p role="alert" className="text-sm text-danger-600">{siteDialogError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" disabled={saving} onClick={() => setSiteDelete(null)}>Cancel</Button>
+            <Button type="submit" variant="danger" loading={saving}>Delete site</Button>
+          </div>
+        </form>}
+      </Modal>
     </div>
   );
 }

@@ -108,6 +108,12 @@ export interface Site {
   name: string;
   source: 'manual' | 'candidate_import';
   created_at: string;
+  group_id?: string | null;
+}
+
+export interface SiteGroup {
+  id: string;
+  name: string;
 }
 
 export interface CandidateSiteAssignment {

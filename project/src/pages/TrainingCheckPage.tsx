@@ -30,6 +30,7 @@ export function TrainingCheckPage() {
   const [sections, setSections] = useState<SiteTraining[]>([]);
   const [loading, setLoading] = useState(true);
   const [localOnly, setLocalOnly] = useState(false);
+  const [localLists, setLocalLists] = useState<SiteTraining[]>([]);
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -47,13 +48,15 @@ export function TrainingCheckPage() {
         if (!active) return;
         setCandidates(people);
         setRegisteredSites(sites.map(({ name }) => name));
+        const saved = isAdmin ? JSON.parse(localStorage.getItem(localKey) ?? '[]') as SiteTraining[] : [];
+        setLocalLists(saved);
         if (result.error?.code === 'PGRST205' || result.error?.code === '42P01') {
           setLocalOnly(true);
-          const saved = JSON.parse(localStorage.getItem(localKey) ?? '[]') as SiteTraining[];
           setRequirements(saved);
         } else if (result.error) {
           throw result.error;
         } else {
+          setLocalOnly(false);
           setRequirements((result.data ?? []).map(({ site_key, site_name, courses }) => ({
             site_name, courses, role: trainingListRole(site_key),
           })));
@@ -67,7 +70,37 @@ export function TrainingCheckPage() {
     }
     void load();
     return () => { active = false; };
-  }, [localKey]);
+  }, [isAdmin, localKey]);
+
+  const unpublishedLists = localOnly ? [] : localLists.filter((entry) =>
+    !requirements.some((published) => trainingListKey(published.site_name, published.role) === trainingListKey(entry.site_name, entry.role)),
+  );
+
+  const publishBrowserLists = async () => {
+    if (!isAdmin || saving || unpublishedLists.length === 0) return;
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const { data, error } = await supabase.from('training_site_requirements').upsert(
+        unpublishedLists.map(({ site_name, courses, role }) => ({
+          site_key: trainingListKey(site_name, role), site_name, courses,
+        })),
+        { onConflict: 'site_key', ignoreDuplicates: true },
+      ).select('site_key,site_name,courses');
+      if (error) throw error;
+      const published = (data ?? []).map(({ site_key, site_name, courses }) => ({
+        site_name, courses, role: trainingListRole(site_key),
+      }));
+      setRequirements((current) => [...current, ...published]);
+      setNotice(`Published ${published.length} lists. Lists already shared were kept as they were.`);
+    } catch (error) {
+      console.error('Could not publish browser lists:', error);
+      setError('Could not publish these browser lists. They are still saved in this browser.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const allSites = [...new Map([
     ...registeredSites,
@@ -170,7 +203,8 @@ export function TrainingCheckPage() {
     <div className="animate-fade-in">
       <PageHeader title="Training Check" subtitle="Compare a site’s required training with the candidate’s Trust/Client sites." />
       {localOnly && <p role="status" className="mb-4 rounded-xl bg-warning-50 p-3 text-sm text-warning-700">
-        Shared storage is unavailable. Requirements saved here are available in this browser only.
+        {isAdmin ? 'Shared storage is unavailable. Requirements saved here are available in this browser only.'
+          : 'Published requirements are unavailable until shared storage is enabled.'}
       </p>}
       {error && <p role="alert" className="mb-4 rounded-xl bg-danger-50 p-3 text-sm text-danger-600">{error}</p>}
       <div className={isAdmin ? 'grid items-start gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]' : undefined}>
@@ -225,6 +259,10 @@ export function TrainingCheckPage() {
         {isAdmin && <Card>
           <CardHeader><CardTitle>Site requirements</CardTitle></CardHeader>
           <CardBody className="space-y-4">
+            {unpublishedLists.length > 0 && <div className="space-y-2 rounded-xl bg-pink-50 p-3">
+              <p className="text-sm text-pink-800">{unpublishedLists.length} lists saved in this browser can be shared with coordinators.</p>
+              <Button type="button" variant="outline" disabled={saving || reading} onClick={() => void publishBrowserLists()}>Publish browser lists</Button>
+            </div>}
             <label className="block rounded-xl border border-dashed border-pink-300 bg-pink-50/60 p-4 text-sm text-pink-800">
               <span className="mb-2 flex items-center gap-2 font-semibold"><Upload size={16} /> {reading ? 'Reading document…' : 'Upload a PDF or Word document'}</span>
               <input aria-label="Upload site requirements" type="file" accept=".pdf,.docx,.txt" disabled={reading || saving}

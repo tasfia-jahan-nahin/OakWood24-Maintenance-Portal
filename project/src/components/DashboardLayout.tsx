@@ -51,7 +51,7 @@ const navItems: { key: PageKey; label: string; icon: typeof LayoutDashboard; adm
   { key: 'do-not-book', label: 'Do Not Book', icon: Ban },
   { key: 'history', label: 'Audit History', icon: History },
   { key: 'reports', label: 'Reports', icon: BarChart3 },
-  { key: 'sites', label: 'Sites', icon: Building2, adminOnly: true },
+  { key: 'sites', label: 'Sites', icon: Building2 },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 

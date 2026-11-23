@@ -19,7 +19,7 @@ import { Spinner } from '@/components/ui/EmptyState';
 import { StatusPopup } from '@/components/StatusPopup';
 
 function AppContent() {
-  const { session, loading, isAdmin, isPasswordRecovery } = useAuth();
+  const { session, loading, isPasswordRecovery } = useAuth();
   const [page, setPage] = useState<PageKey>(() =>
     window.location.pathname === '/list' ? 'list' : 'dashboard',
   );
@@ -98,7 +98,7 @@ function AppContent() {
       {page === 'do-not-book' && <DoNotBookPage onEdit={handleEditCandidate} />}
       {page === 'history' && <HistoryPage />}
       {page === 'reports' && <ReportsPage />}
-      {page === 'sites' && isAdmin && <SitesPage />}
+      {page === 'sites' && <SitesPage />}
       {page === 'settings' && <SettingsPage />}
     </DashboardLayout>
   );
