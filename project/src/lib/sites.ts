@@ -70,18 +70,21 @@ export async function fetchCandidateSiteAssignments(): Promise<CandidateSiteAssi
   }
 }
 
-export async function createSite(name: string, groupId: string | null = null): Promise<Site> {
-  const normalizedName = name.trim();
-  if (!normalizedName) throw new Error('Enter a site name.');
-
+export async function createSites(names: string[], groupId: string | null = null): Promise<Site[]> {
+  if (!names.length) return [];
   const { data, error } = await supabase
     .from('sites')
-    .insert({ name: normalizedName, source: 'manual', ...(groupId ? { group_id: groupId } : {}) })
-    .select()
-    .single();
+    .insert(names.map((name) => ({ name: name.trim(), source: 'manual', group_id: groupId })))
+    .select();
   if (!error) return data;
   if (error.code === '23505') throw new Error('A site with this name already exists.');
   throw error;
+}
+
+export async function groupSiteLocations(ids: string[], groupId: string): Promise<void> {
+  if (!ids.length) return;
+  const { error } = await supabase.from('sites').update({ group_id: groupId }).in('id', ids);
+  if (error) throw error;
 }
 
 export async function assignCandidateToSite(candidateId: string, siteId: string): Promise<void> {

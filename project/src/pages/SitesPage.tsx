@@ -15,18 +15,19 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { EmptyState, PageHeader, Spinner } from '@/components/ui/EmptyState';
-import { Input, Select } from '@/components/ui/Input';
+import { Input, Select, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { countCandidatesByGroup } from '@/lib/siteGroups';
 import {
   assignCandidateToSite,
-  createSite,
+  createSites,
   createSiteGroup,
   deleteSiteLocation,
   ensureDiscoveredSites,
   fetchCandidateSiteAssignments,
   fetchSiteGroups,
   fetchSites,
+  groupSiteLocations,
   removeCandidateFromSite,
   updateSiteLocation,
 } from '@/lib/sites';
@@ -90,6 +91,10 @@ export function SitesPage() {
   const [groups, setGroups] = useState<SiteGroup[]>([]);
   const [groupFilter, setGroupFilter] = useState('');
   const [groupName, setGroupName] = useState('');
+  const [addingTo, setAddingTo] = useState<SiteGroup | null>(null);
+  const [locationNames, setLocationNames] = useState('');
+  const [locationSearch, setLocationSearch] = useState('');
+  const [locationIds, setLocationIds] = useState<string[]>([]);
   const [siteEdit, setSiteEdit] = useState<{ id: string; name: string; groupId: string } | null>(null);
   const [siteDelete, setSiteDelete] = useState<Site | null>(null);
   const [deleteChoice, setDeleteChoice] = useState('');
@@ -112,6 +117,8 @@ export function SitesPage() {
   const [assignmentSiteIds, setAssignmentSiteIds] = useState<string[]>([]);
 
   const siteKey = (name: string) => name.trim().toLowerCase();
+  const distinctLocationNames = (value: string) => [...new Map(splitTrustSites(value)
+    .map((name) => [siteKey(name), name])).values()];
   const sitesByName = new Map(sites.map((site) => [siteKey(site.name), site]));
   const assignedPairs = new Set(assignments.map((assignment) => `${assignment.candidate_id}:${assignment.site_id}`));
   const missingAssignments = candidates.flatMap((candidate) => {
@@ -207,6 +214,7 @@ export function SitesPage() {
   [sites, assignments, candidatesById]);
   const selectGroup = (id: string) => {
     setGroupFilter(id);
+    setSiteSearch('');
     if (id && !sites.some((site) => site.id === selectedSiteId && (site.group_id ?? 'ungrouped') === id)) {
       setSelectedSiteId(sites.find((site) => (site.group_id ?? 'ungrouped') === id)?.id ?? '');
     }
@@ -243,12 +251,12 @@ export function SitesPage() {
 
   const handleAddSite = async () => {
     if (!ready || saving) return;
-    const normalized = siteName.trim().toLocaleLowerCase();
-    if (!normalized) {
+    const names = distinctLocationNames(siteName);
+    if (!names.length) {
       setError('Enter a site name.');
       return;
     }
-    if (sites.some((site) => site.name.trim().toLocaleLowerCase() === normalized)) {
+    if (names.some((name) => sitesByName.has(siteKey(name)))) {
       setError('A site with this name already exists.');
       return;
     }
@@ -256,12 +264,41 @@ export function SitesPage() {
     setSaving(true);
     setError(null);
     try {
-      const site = await createSite(siteName, groupFilter && groupFilter !== 'ungrouped' ? groupFilter : null);
-      setSites((current) => [...current, site].sort((a, b) => a.name.localeCompare(b.name)));
-      setSelectedSiteId(site.id);
+      const created = await createSites(names, groupFilter && groupFilter !== 'ungrouped' ? groupFilter : null);
+      setSites((current) => [...current, ...created].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedSiteId(created[0]?.id ?? '');
       setSiteName('');
     } catch (saveError) {
       setError(messageForError(saveError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addLocations = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!addingTo || !ready || saving) return;
+    const names = distinctLocationNames(locationNames);
+    const ids = new Set(locationIds);
+    const newNames = names.filter((name) => {
+      const existing = sitesByName.get(siteKey(name));
+      if (existing && existing.group_id !== addingTo.id) ids.add(existing.id);
+      return !existing;
+    });
+    setSaving(true);
+    setSiteDialogError('');
+    try {
+      const created = await createSites(newNames, addingTo.id);
+      // Update local state after each successful request so a retry skips locations just created.
+      setSites((current) => [...current, ...created].sort((a, b) => a.name.localeCompare(b.name)));
+      await groupSiteLocations([...ids], addingTo.id);
+      setSites((current) => current.map((site) => ids.has(site.id) ? { ...site, group_id: addingTo.id } : site));
+      setGroupFilter(addingTo.id);
+      setSiteSearch('');
+      setSelectedSiteId(created[0]?.id ?? [...ids][0] ?? '');
+      setAddingTo(null);
+    } catch (err) {
+      setSiteDialogError(messageForError(err));
     } finally {
       setSaving(false);
     }
@@ -287,6 +324,10 @@ export function SitesPage() {
   const saveSite = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!siteEdit || saving || !siteEdit.name.trim()) return;
+    if (/[,;|\r\n]/.test(siteEdit.name) && siteEdit.name !== sites.find(({ id }) => id === siteEdit.id)?.name) {
+      setSiteDialogError('Enter one location name here. Use Add locations to enter multiple names.');
+      return;
+    }
     setSaving(true);
     setSiteDialogError('');
     try {
@@ -367,7 +408,7 @@ export function SitesPage() {
           <div className="flex w-full gap-2 sm:w-auto">
             <Input
               aria-label="New site name"
-              placeholder="Add a site name"
+              placeholder="Add location names"
               value={siteName}
               onChange={(event) => setSiteName(event.target.value)}
               onKeyDown={(event) => {
@@ -376,7 +417,7 @@ export function SitesPage() {
               className="min-w-0 sm:w-56"
             />
             <Button onClick={() => void handleAddSite()} loading={saving} disabled={!ready} className="shrink-0">
-              <Plus size={17} /> Add site
+              <Plus size={17} /> Add to directory
             </Button>
           </div>
         }
@@ -401,9 +442,9 @@ export function SitesPage() {
       )}
 
       {ready && <section aria-label="Site summary" className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
-        <SummaryCard label="Total sites" value={sites.length} icon={Building2} />
+        <SummaryCard label="Parent sites" value={groups.length} icon={Building2} />
+        <SummaryCard label="Locations" value={sites.length} icon={MapPin} />
         <SummaryCard label="Unique candidates" value={uniqueAssignedCandidates.length} icon={Users} />
-        <SummaryCard label="Assignments" value={assignments.length} icon={Link2} />
         <SummaryCard label="Active" value={statusCounts.active} icon={Check} />
         <SummaryCard label="Inactive" value={statusCounts.inactive} icon={Users} />
         <SummaryCard label="No Zoho" value={statusCounts.noZoho} icon={MapPin} />
@@ -414,19 +455,19 @@ export function SitesPage() {
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <CardTitle>Site directory</CardTitle>
-              <Badge tone="pink">{sites.length} sites</Badge>
+              <Badge tone="pink">{sites.length} locations</Badge>
             </div>
           </CardHeader>
           <CardBody>
             <form className="mb-4 flex items-end gap-2" onSubmit={handleAddGroup}>
               <div className="min-w-0 flex-1">
-                <Input id="site-group-name" label="New group" placeholder="e.g. Abbeyfield" value={groupName}
+                <Input id="site-group-name" label="New parent site" placeholder="e.g. Abbeyfield" value={groupName}
                   required maxLength={200} onChange={(event) => setGroupName(event.target.value)} />
               </div>
               <Button type="submit" variant="outline" disabled={saving}><Plus size={16} /> Add</Button>
             </form>
-            <div className="mb-4 space-y-1" aria-label="Site groups">
-              <Button type="button" size="sm" variant={groupFilter === '' ? 'secondary' : 'ghost'} onClick={() => selectGroup('')}>All sites</Button>
+            <div className="mb-4 space-y-1" aria-label="Parent sites">
+              <Button type="button" size="sm" variant={groupFilter === '' ? 'secondary' : 'ghost'} onClick={() => selectGroup('')}>All locations</Button>
               <Button type="button" size="sm" variant={groupFilter === 'ungrouped' ? 'secondary' : 'ghost'} onClick={() => selectGroup('ungrouped')}>Ungrouped</Button>
               {groups.map((group) => (
                 <button type="button" key={group.id} onClick={() => selectGroup(group.id)} aria-pressed={groupFilter === group.id}
@@ -435,6 +476,15 @@ export function SitesPage() {
                   <Badge tone="pink">{countsByGroup.get(group.id)?.size ?? 0} candidates</Badge>
                 </button>
               ))}
+              {groups.some((group) => group.id === groupFilter) && (
+                <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => {
+                  setSiteDialogError('');
+                  setLocationIds([]);
+                  setLocationNames('');
+                  setLocationSearch('');
+                  setAddingTo(groups.find((group) => group.id === groupFilter) ?? null);
+                }}><Plus size={16} /> Add locations</Button>
+              )}
             </div>
             <Input
               aria-label="Search sites"
@@ -670,11 +720,33 @@ export function SitesPage() {
           </Button>
         </div>
       </Modal>
+      <Modal open={!!addingTo} title={`Add locations to ${addingTo?.name ?? ''}`} size="lg"
+        dismissible={!saving} onClose={() => setAddingTo(null)}>
+        {addingTo && <form className="space-y-4" onSubmit={addLocations}>
+          <Input label="Search existing locations" value={locationSearch} disabled={saving}
+            onChange={(event) => setLocationSearch(event.target.value)} />
+          <div className="max-h-56 space-y-1 overflow-auto">
+            {sites.filter((site) => site.group_id !== addingTo.id && siteKey(site.name).includes(siteKey(locationSearch)))
+              .map((site) => <label key={site.id} className="flex items-center gap-2 rounded-lg bg-pink-50 p-2 text-sm text-pink-900">
+                <input type="checkbox" className="accent-pink-500" checked={locationIds.includes(site.id)} disabled={saving}
+                  onChange={(event) => setLocationIds((current) => event.target.checked
+                    ? [...current, site.id] : current.filter((id) => id !== site.id))} />
+                {site.name}
+                {site.group_id && <span className="text-xs text-pink-700">Currently under {groups.find((group) => group.id === site.group_id)?.name}</span>}
+              </label>)}
+          </div>
+          <Textarea label="Location names separated by commas or new lines" rows={3} value={locationNames}
+            disabled={saving} onChange={(event) => setLocationNames(event.target.value)} />
+          <p className="text-sm text-pink-700">Existing names are moved to this parent site. New names are added as locations.</p>
+          {siteDialogError && <p role="alert" className="text-sm text-danger-600">{siteDialogError}</p>}
+          <Button type="submit" loading={saving} disabled={!locationIds.length && !distinctLocationNames(locationNames).length}>Save locations</Button>
+        </form>}
+      </Modal>
       <Modal open={!!siteEdit} title="Edit site" size="sm" onClose={() => { if (!saving) setSiteEdit(null); }}>
         {siteEdit && <form className="space-y-4" onSubmit={saveSite}>
           <Input id="site-edit-name" label="Location name" value={siteEdit.name} required maxLength={200} disabled={saving}
             onChange={(event) => setSiteEdit({ ...siteEdit, name: event.target.value })} />
-          <Select id="site-edit-group" label="Group" value={siteEdit.groupId} disabled={saving}
+          <Select id="site-edit-group" label="Parent site" value={siteEdit.groupId} disabled={saving}
             onChange={(event) => setSiteEdit({ ...siteEdit, groupId: event.target.value })}>
             <option value="">Ungrouped</option>
             {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
