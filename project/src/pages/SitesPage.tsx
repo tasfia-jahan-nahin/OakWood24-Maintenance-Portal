@@ -23,6 +23,7 @@ import {
   createSite,
   createSiteGroup,
   deleteSiteLocation,
+  ensureDiscoveredSites,
   fetchCandidateSiteAssignments,
   fetchSiteGroups,
   fetchSites,
@@ -30,6 +31,7 @@ import {
   updateSiteLocation,
 } from '@/lib/sites';
 import { fetchCandidatesStrict } from '@/lib/api';
+import { splitTrustSites } from '@/lib/trainingCheck';
 import {
   CANDIDATE_STATUSES,
   STATUS_LABELS,
@@ -92,6 +94,8 @@ export function SitesPage() {
   const [siteDelete, setSiteDelete] = useState<Site | null>(null);
   const [deleteChoice, setDeleteChoice] = useState('');
   const [siteDialogError, setSiteDialogError] = useState('');
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncNotice, setSyncNotice] = useState('');
   const [ready, setReady] = useState(false);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [assignments, setAssignments] = useState<CandidateSiteAssignment[]>([]);
@@ -106,6 +110,21 @@ export function SitesPage() {
   const [statusFilter, setStatusFilter] = useState<CandidateStatus | 'all'>('all');
   const [selectedCandidateId, setSelectedCandidateId] = useState('');
   const [assignmentSiteIds, setAssignmentSiteIds] = useState<string[]>([]);
+
+  const siteKey = (name: string) => name.trim().toLowerCase();
+  const sitesByName = new Map(sites.map((site) => [siteKey(site.name), site]));
+  const assignedPairs = new Set(assignments.map((assignment) => `${assignment.candidate_id}:${assignment.site_id}`));
+  const missingAssignments = candidates.flatMap((candidate) => {
+    const names = new Map(Object.entries(candidate.extra_data ?? {})
+      .filter(([field]) => /(^|[^a-z])(trust|client|hospital)([^a-z]|$)/i.test(field))
+      .flatMap(([, value]) => splitTrustSites(value))
+      .map((name) => [siteKey(name), name]));
+    return [...names].flatMap(([key, name]) => {
+      const site = sitesByName.get(key);
+      return site && assignedPairs.has(`${candidate.id}:${site.id}`) ? [] : [{ candidate, name, key }];
+    });
+  });
+  const missingSites = new Set(missingAssignments.filter(({ key }) => !sitesByName.has(key)).map(({ key }) => key));
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -135,6 +154,31 @@ export function SitesPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const syncSites = async () => {
+    if (saving || !missingAssignments.length) return;
+    setSaving(true);
+    setSiteDialogError('');
+    setSyncNotice('');
+    let added = 0;
+    try {
+      const currentSites = await ensureDiscoveredSites(missingAssignments.map(({ name }) => name));
+      const byName = new Map(currentSites.map((site) => [siteKey(site.name), site]));
+      for (const { key, candidate } of missingAssignments) {
+        const site = byName.get(key);
+        if (!site) throw new Error('A site changed during sync. Review the list and try again.');
+        await assignCandidateToSite(candidate.id, site.id);
+        added++;
+      }
+      setSyncNotice(`Sync complete. Processed ${added} candidate assignments.`);
+      setSyncOpen(false);
+    } catch (err) {
+      setSiteDialogError(`Sync stopped after processing ${added} assignments. ${messageForError(err)}`);
+    } finally {
+      await loadData();
+      setSaving(false);
+    }
+  };
 
   const candidatesById = useMemo(
     () => new Map(candidates.map((candidate) => [candidate.id, candidate])),
@@ -338,6 +382,11 @@ export function SitesPage() {
         }
       />
 
+      {ready && <Button variant="outline" disabled={saving} onClick={() => {
+        setSiteDialogError('');
+        setSyncOpen(true);
+      }}>Sync from Trust/Client</Button>}
+      {syncNotice && <p role="status" className="text-sm text-pink-700">{syncNotice}</p>}
       {error && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger-500/30 bg-danger-50 px-4 py-3 text-sm text-danger-600">
           <span>{error}</span>
@@ -604,6 +653,23 @@ export function SitesPage() {
           </Card>
         </div>
       </div>}
+      <Modal open={syncOpen} title="Sync from Trust/Client" size="lg" dismissible={!saving}
+        onClose={() => setSyncOpen(false)}>
+        <div className="space-y-4">
+          <p className="text-sm text-pink-800">
+            {missingSites.size} new sites and {missingAssignments.length} missing candidate assignments.
+          </p>
+          {missingAssignments.length ? <ul className="max-h-60 overflow-auto space-y-1 text-sm text-pink-900">
+            {missingAssignments.map(({ candidate, name, key }) => (
+              <li key={`${candidate.id}:${key}`}>{candidate.full_name} → {name}{missingSites.has(key) ? ' (new site)' : ''}</li>
+            ))}
+          </ul> : <p className="text-sm text-pink-700">All Trust/Client sites are already linked.</p>}
+          {siteDialogError && <p role="alert" className="text-sm text-danger-600">{siteDialogError}</p>}
+          <Button loading={saving} disabled={!ready || !missingAssignments.length} onClick={() => void syncSites()}>
+            Add missing sites and assignments
+          </Button>
+        </div>
+      </Modal>
       <Modal open={!!siteEdit} title="Edit site" size="sm" onClose={() => { if (!saving) setSiteEdit(null); }}>
         {siteEdit && <form className="space-y-4" onSubmit={saveSite}>
           <Input id="site-edit-name" label="Location name" value={siteEdit.name} required maxLength={200} disabled={saving}

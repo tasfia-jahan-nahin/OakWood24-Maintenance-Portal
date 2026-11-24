@@ -29,6 +29,7 @@ export function TrainingCheckPage() {
   const [coursesText, setCoursesText] = useState('');
   const [sections, setSections] = useState<SiteTraining[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [localOnly, setLocalOnly] = useState(false);
   const [localLists, setLocalLists] = useState<SiteTraining[]>([]);
   const [reading, setReading] = useState(false);
@@ -70,7 +71,7 @@ export function TrainingCheckPage() {
     }
     void load();
     return () => { active = false; };
-  }, [isAdmin, localKey]);
+  }, [isAdmin, localKey, refreshVersion]);
 
   const unpublishedLists = localOnly ? [] : localLists.filter((entry) =>
     !requirements.some((published) => trainingListKey(published.site_name, published.role) === trainingListKey(entry.site_name, entry.role)),
@@ -201,7 +202,13 @@ export function TrainingCheckPage() {
 
   return (
     <div className="animate-fade-in">
-      <PageHeader title="Training Check" subtitle="Compare a site’s required training with the candidate’s Trust/Client sites." />
+      <PageHeader title="Training Check" subtitle="Compare a site’s required training with the candidate’s Trust/Client sites."
+        action={<Button variant="outline" disabled={saving || reading} onClick={() => {
+          setError('');
+          setNotice('');
+          setLoading(true);
+          setRefreshVersion((version) => version + 1);
+        }}>Refresh requirements</Button>} />
       {localOnly && <p role="status" className="mb-4 rounded-xl bg-warning-50 p-3 text-sm text-warning-700">
         {isAdmin ? 'Shared storage is unavailable. Requirements saved here are available in this browser only.'
           : 'Published requirements are unavailable until shared storage is enabled.'}
