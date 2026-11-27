@@ -1393,9 +1393,14 @@ export function getRegularChasingCandidates(
       const complianceField = DOCUMENT_TYPE_TO_FIELD[field] as ComplianceDateField;
       const expiryDate = c[complianceField] as string | null;
       if (!expiryDate) return [];
-      if (c.expiryStatuses[complianceField] !== 'expiring') return [];
+      // Training follow-up starts earlier in Chase Centre without changing booking rules.
+      const expiryStatus = field === 'training'
+        ? getExpiryStatus(expiryDate, 30)
+        : c.expiryStatuses[complianceField];
+      if (expiryStatus !== 'expiring') return [];
 
-      const warningTier = c.warningTiers[complianceField];
+      const existingTier = c.warningTiers[complianceField];
+      const warningTier = field === 'training' && existingTier === 'none' ? 'first' : existingTier;
       if (tier === 'first' && warningTier !== 'first') return [];
       if (tier === 'second' && warningTier !== 'second') return [];
 
@@ -1414,7 +1419,7 @@ export function getRegularChasingCandidates(
         candidate: c,
         documentType: field,
         expiryDate,
-        expiryStatus: c.expiryStatuses[complianceField],
+        expiryStatus,
         warningTier,
         latestAction,
       }];
