@@ -15,9 +15,10 @@ type QueueItem = {
   remark: string;
   status: QueueStatus;
   closed_at: string | null;
+  added_by: string | null;
 };
 type Draft = Pick<QueueItem, 'kind' | 'title' | 'remark' | 'status'> & { id?: string };
-const fields = 'id,kind,title,remark,status,closed_at';
+const fields = 'id,kind,title,remark,status,closed_at,added_by';
 
 export function DailyQueuePage() {
   const [items, setItems] = useState<QueueItem[]>([]);
@@ -124,6 +125,7 @@ export function DailyQueuePage() {
   const renderItem = (item: QueueItem) => (
     <li key={item.id} className="space-y-2 rounded-xl border border-pink-100 p-3">
       <h3 className="break-words font-semibold text-pink-900">{item.title}</h3>
+      <p className="break-words text-xs text-pink-700">{item.added_by ? `Added by ${item.added_by}` : 'Creator not recorded'}</p>
       {item.remark && <p className="whitespace-pre-wrap break-words text-sm text-pink-800">{item.remark}</p>}
       <div className="flex flex-wrap items-center gap-2">
         {item.kind === 'task' && <Select aria-label={`Status for ${item.title}`} value={item.status} disabled={saving}
