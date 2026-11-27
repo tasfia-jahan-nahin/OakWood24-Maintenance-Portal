@@ -31,6 +31,7 @@ export type PageKey =
   | 'do-not-book'
   | 'inactive-candidates'
   | 'history'
+  | 'daily-queue'
   | 'reports'
   | 'sites'
   | 'settings';
@@ -52,6 +53,7 @@ const navItems: { key: PageKey; label: string; icon: typeof LayoutDashboard; adm
   { key: 'do-not-book', label: 'Do Not Book', icon: Ban },
   { key: 'inactive-candidates', label: 'Inactive Candidates', icon: Users },
   { key: 'history', label: 'Audit History', icon: History },
+  { key: 'daily-queue', label: 'Daily Queue', icon: ClipboardCheck },
   { key: 'reports', label: 'Reports', icon: BarChart3 },
   { key: 'sites', label: 'Sites', icon: Building2 },
   { key: 'settings', label: 'Settings', icon: Settings },
